@@ -12,21 +12,39 @@ script to copy loads of data between databases
 
 import sys
 import os
+import signal
 import code
 from timeit import default_timer as timer
+from time import sleep
 from datetime import datetime
 
+import threading
+import queue
+
 import pandas as pd
+
+# GLOBAL VARS
 
 expected_conns_columns=("name","driver","server","database","user","password")
 expected_query_columns=("source","dest","mode","query","table")
 
+g_dataBuffer=queue.Queue(16)
+g_readRecords=queue.Queue()
+g_writtenRecords=queue.Queue()
+
+g_defaultFetchSize=1000
+
+g_fetchSize=g_defaultFetchSize
+
+g_readT = False
+g_writeT = False
+g_Working = True
 
 def logPrint(psErrorMessage, p_logfile=''):
     sMsg = '{0}: {1}'.format(str(datetime.now()), psErrorMessage)
-    print(sMsg, file = sys.stderr)
+    print(sMsg, file = sys.stderr, flush=True)
     if p_logfile!='':
-        print(sMsg, file = p_logfile)
+        print(sMsg, file = p_logfile, flush=True)
 
 
 def initConnections(p_filename):
@@ -40,7 +58,6 @@ def initConnections(p_filename):
         if ecol not in c:
             logPrint("Missing column on connections file: [{0}]".format(ecol))
             sys.exit(1)
-
 
     for i in range(0,len(c)):
         if c["name"][i]=="" or c["name"][i][0]=="#":
@@ -130,14 +147,60 @@ def preCheck(p_connections, p_queries):
         query=p_queries["query"][i]
         table=p_queries["table"][i]
 
-        if source not in _connections:
+        if source not in p_connections:
             logPrint("ERROR: data source [{0}] not declared on connections.csv. giving up.".format(source))
             sys.exit(2)
-        if dest not in _connections:
+        if dest not in p_connections:
             logPrint("ERROR: data destination [{0}] not declared on connections.csv. giving up.".format(dest))
             sys.exit(2)
 
+
+def readData(p_connection, p_cursor):
+    global g_dataBuffer
+    global g_readRecords
+    global g_fetchSize
+
+    print("readData Started")
+    while g_Working:
+        try:
+            rStart=timer()
+            bData = p_cursor.fetchmany(g_fetchSize)
+        except (Exception) as error:
+            logPrint("DB Read Error: [{0}]".format(error))
+            g_dataBuffer.put(False)
+            break
+        g_dataBuffer.put(bData, block=True)
+        g_readRecords.put( (p_cursor.rowcount, (timer()-rStart)) )
+        if not bData:
+            g_dataBuffer.put((False))
+            break
+    print("readData Ended")
+ 
+
+def writeData(p_connection, p_cursor, p_iQuery):
+    global g_dataBuffer
+    global g_writtenRecords
+
+    print("writeData Started")
+    while g_Working:
+        try:
+            bData = g_dataBuffer.get(block=False,timeout=2)
+        except queue.Empty:
+            continue
+        if not bData:
+            g_writtenRecords.put( (False, float(0)) )
+            break
+        iStart=timer()
+        iResult  = p_cursor.executemany(p_iQuery, bData)
+        p_connection.commit()
+        g_writtenRecords.put( (p_cursor.rowcount, (timer()-iStart)) )
+    print("writeData Ended")
+
+
 def copyData(p_connections,p_queries):
+    global g_fetchSize
+    global g_defaultFetchSize
+
     for i in range(0,len(p_queries)):
         source=p_queries["source"][i]
         if source=="" or source[0]=="#":
@@ -146,6 +209,12 @@ def copyData(p_connections,p_queries):
         mode=p_queries["mode"][i]
         query=p_queries["query"][i]
         table=p_queries["table"][i]
+        if "fetch_size" in p_queries:
+            qFetchSize=int(p_queries["fetch_size"][i])
+            if qFetchSize == 0:
+                g_fetchSize=g_defaultFetchSize
+            else:
+                g_fetchSize=qFetchSize
 
         sLogFile="{0}.{1}.running.log".format(dest,table)
         fLogFile=open(sLogFile,'a')
@@ -209,20 +278,51 @@ def copyData(p_connections,p_queries):
                 sIcolType="from source"
 
             logPrint("insert query (cols={0}): [{1}]".format(sIcolType,iQuery) ,fLogFile)
-            iDataRows = 0
+
+            iTotalDataLinesRead = 0
+            iTotalDataLinesWritten = 0
+
+            bFetchRead = True
+            bFinishedRead = False
+            bFinishedWrite = False
+
+            iTotalReadSecs=.001
+            iTotalWrittenSecs=.001
+
             logPrint('entering insert loop...',fLogFile)
-            while True:
-                oData = cGetData.fetchmany(1000)
-                if not oData:
+            g_readT=threading.Thread(target=readData, args=(p_connections[source], cGetData))
+            g_readT.start()
+            g_writeT=threading.Thread(target=writeData, args=(p_connections[dest], cPutData, iQuery))
+            g_writeT.start()
+            while g_Working:
+                try:
+                    if bFetchRead:
+                        bFetchRead=False
+                        recRead,readSecs = g_readRecords.get(block=False,timeout=1)
+                        if not recRead:
+                            bFinishedRead=True
+                        else:
+                            iTotalDataLinesRead += recRead
+                            iTotalReadSecs += readSecs
+                    else:
+                        bFetchRead=True
+                        recWritten,writeSecs = g_writtenRecords.get(block=False,timeout=1)
+                        if not recWritten:
+                            bFinishedWrite=True
+                        else:
+                            iTotalDataLinesWritten += recWritten
+                            iTotalWrittenSecs += writeSecs
+                except queue.Empty:
+                    continue
+
+                print("{0} records read ({1:.2f}/sec), {2} records written ({3:.2f}/sec)\r".format(iTotalDataLinesRead, (iTotalDataLinesRead/iTotalReadSecs), iTotalDataLinesWritten, (iTotalDataLinesWritten/iTotalWrittenSecs)),end='')
+                if bFinishedRead and bFinishedWrite:
                     break
-                iResult  = cPutData.executemany(iQuery, oData)
-                p_connections[dest].commit()
-                iDataRows = iDataRows + cPutData.rowcount
 
             cPutData.close()
             cGetData.close()
-            iTotalDataLines += iDataRows
-            logPrint('{0} rows copied in {1:.2f} seconds.'.format(iDataRows, timer() - tStart), fLogFile)
+ 
+            logPrint('{0} rows copied in {1:.2f} seconds ({2:.2f}/sec).'.format(iTotalDataLinesWritten, (timer() - tStart), (iTotalDataLinesWritten/iTotalWrittenSecs)), fLogFile)
         except (Exception) as error:
             bErrorOccurred=True
             p_connections[dest].rollback()
@@ -236,21 +336,52 @@ def copyData(p_connections,p_queries):
             if bErrorOccurred or mode==mode.upper():
                 os.rename(sLogFile, sLogFileFinalName)
 
+def sig_handler(signum, frame):
+    global g_readT
+    global g_writeT
+    global g_Working
+    logPrint('signal received, signaling stop to threads...')
+    g_Working = False
+    while True:
+        try:
+            dummy=g_dataBuffer.get(block=False, timeout=1)
+        except queue.Empty:
+            break
+    try:
+        if g_readT:
+            print("waiting for read thread...")
+            g_readT.join()
+        if g_writeT:
+            print("waiting for write thread...")
+            g_writeT.join()
+    finally:
+        logPrint('thread cleanup finished.')
+
+
 # MAIN
+def Main():
+    global g_readT
+    global g_writeT
+    global g_fullstop
 
+    signal.signal(signal.SIGINT, sig_handler)
+    signal.signal(signal.SIGTERM, sig_handler)
 
-if len(sys.argv) < 3:
-    q_filename='queries.csv'
-else:
-    q_filename=sys.argv[2]
+    if len(sys.argv) < 3:
+        q_filename='queries.csv'
+    else:
+        q_filename=sys.argv[2]
 
-if len(sys.argv) < 2:
-    c_filename='connections.csv'
-else:
-    c_filename=sys.argv[1]
+    if len(sys.argv) < 2:
+        c_filename='connections.csv'
+    else:
+        c_filename=sys.argv[1]
 
-_connections=initConnections(c_filename)
-_queries=initQueries(q_filename)
+    _connections=initConnections(c_filename)
+    _queries=initQueries(q_filename)
 
-preCheck(_connections,_queries)
-copyData(_connections,_queries)
+    preCheck(_connections,_queries)
+    copyData(_connections,_queries)
+
+if __name__ == '__main__':
+    Main()
