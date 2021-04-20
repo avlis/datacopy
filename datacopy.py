@@ -262,6 +262,7 @@ def copyData(p_connections,p_queries):
 
             tStart=timer()
             cGetData.execute(query)
+            logPrint('source query took {1:.2f} seconds to reply.'.format((timer() - tStart)), fLogFile)
 
             iCols = 0
             sColsPlaceholders = ''
