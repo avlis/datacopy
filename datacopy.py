@@ -43,7 +43,7 @@ g_Working = True
 g_ErrorOccurred=False
 
 def logPrint(psErrorMessage, p_logfile=''):
-    sMsg = '{0}: {1}'.format(str(datetime.now()), psErrorMessage)
+    sMsg = "{0}: {1}".format(str(datetime.now()), psErrorMessage)
     print(sMsg, file = sys.stderr, flush=True)
     if p_logfile!='':
         print(sMsg, file = p_logfile, flush=True)
@@ -62,17 +62,18 @@ def initConnections(p_filename):
             sys.exit(1)
 
     for i in range(0,len(c)):
-        if c["name"][i]=="" or c["name"][i][0]=="#":
+        cName=c["name"][i]
+        if cName=="" or cName[0]=="#":
             continue
 
-        logPrint("trying to connect to datasource[{0}]...".format(c["name"][i]))
+        logPrint("initConnections[{0}]: trying to connect...".format(cName))
         if c["driver"][i]=="pyodbc":
             sGetVersion='SELECT version()'
             try:
                 import pyodbc
                 nc=pyodbc.connect(driver="{ODBC Driver 17 for SQL Server}", server=c["server"][i], database=c["database"][i], user=c["user"][i], password=c["password"][i],encoding = "UTF-8", nencoding = "UTF-8" )
             except (Exception, pyodbc.DatabaseError) as error:
-                logPrint(error)
+                logPrint("initConnections({0}): DB error [{1}]".format(cName,error))
                 sys.exit(1)
 
         if c["driver"][i]=="cx_Oracle":
@@ -81,7 +82,7 @@ def initConnections(p_filename):
                 import cx_Oracle
                 nc=cx_Oracle.connect(c["user"][i], c["password"][i], "{0}/{1}".format(c["server"][i], c["database"][i]), encoding = "UTF-8", nencoding = "UTF-8" )
             except (Exception) as error:
-                logPrint(error)
+                logPrint("initConnections({0}): DB error [{1}]".format(cName,error))
                 sys.exit(1)
 
         if c["driver"][i]=="psycopg2":
@@ -90,7 +91,7 @@ def initConnections(p_filename):
                 import psycopg2
                 nc=psycopg2.connect(host=c["server"][i], database=c["database"][i], user=c["user"][i], password=c["password"][i])
             except (Exception) as error:
-                logPrint(error)
+                logPrint("initConnections({0}): DB error [{1}]".format(cName,error))
                 sys.exit(1)
 
         if c["driver"][i]=="mysql":
@@ -99,7 +100,7 @@ def initConnections(p_filename):
                 import mysql.connector
                 nc=mysql.connector.connect(host=c["server"][i], database=c["database"][i], user=c["user"][i], password=c["password"][i])
             except (Exception) as error:
-                logPrint(error)
+                logPrint("initConnections({0}): DB error [{1}]".format(cName,error))
                 sys.exit(1)
 
         if c["driver"][i]=="mariadb":
@@ -108,18 +109,18 @@ def initConnections(p_filename):
                 import mariadb
                 nc=mariadb.connect(host=c["server"][i], database=c["database"][i], user=c["user"][i], password=c["password"][i])
             except (Exception) as error:
-                logPrint(error)
+                logPrint("initConnections({0}): DB error [{1}]".format(cName,error))
                 sys.exit(1)
 
         cur=nc.cursor()
-        logPrint("Testing connection, getting version with [{0}]...".format(sGetVersion))
+        logPrint("initConnections({0}): Testing connection, getting version with [{1}]...".format(cName, sGetVersion))
         try:
             cur.execute(sGetVersion)
             db_version = cur.fetchone()
-            logPrint("ok, connected to DB version: {0}".format(db_version))
+            logPrint("initConnections({0}): ok, connected to DB version: {1}".format(cName, db_version))
             cur.close()
         except (Exception) as error:
-            logPrint(error)
+            logPrint("initConnections({0}): DB error [{1}]".format(cName, error))
 
         conns[c["name"][i]]=nc
 
@@ -156,7 +157,7 @@ def preCheck(p_connections, p_queries):
             logPrint("ERROR: data destination [{0}] not declared on connections.csv. giving up.".format(dest))
             sys.exit(2)
 
-def readData(p_connection, p_cursor):
+def readData(p_index, p_connection, p_cursor):
     global g_Working
     global g_dataBuffer
     global g_readRecords
@@ -164,52 +165,51 @@ def readData(p_connection, p_cursor):
     global g_ErrorOccurred
 
 
-    print("readData Started")
+    print("readData({0}): Started".format(p_index), flush=True)
     while g_Working:
         try:
             rStart=timer()
             bData = p_cursor.fetchmany(g_fetchSize)
         except (Exception) as error:
-            logPrint("DB Read Error: [{0}]".format(error))
+            logPrint("ReadData({0}): DB Error: [{1}]".format(p_index, error))
             g_ErrorOccurred=True
             break
-        g_dataBuffer.put(bData, block=True)
         g_readRecords.put( (p_cursor.rowcount, (timer()-rStart)) )
+        g_dataBuffer.put(bData, block=True)
         if not bData:
             break
     g_dataBuffer.put(False)
     g_readRecords.put((False,float(0)))
-    print("\nreadData Ended")
+    print("\nreadData({0}): Ended".format(p_index), flush=True)
  
-
-def writeData(p_connection, p_cursor, p_iQuery):
+def writeData(p_index, p_connection, p_cursor, p_iQuery):
     global g_Working
     global g_dataBuffer
     global g_writtenRecords
     global g_ErrorOccurred
 
-    print("writeData Started")
+    print("writeData({0}): Started".format(p_index), flush=True)
     while g_Working:
         try:
             bData = g_dataBuffer.get(block=False,timeout=2)
         except queue.Empty:
             continue
         if not bData:
-            print ("\nNo more data message received from reader", flush=True)
+            print ("\nwriteData({0}): 'no more data' message received".format(p_index), flush=True)
             break
         iStart=timer()
         try:
             iResult  = p_cursor.executemany(p_iQuery, bData)
             p_connection.commit()
         except (Exception) as error:
-            logPrint("DB Read Error: [{0}]".format(error))
+            logPrint("writeData({0}): DB Error: [{1}]".format(p_index,error))
             p_connection.rollback()
             g_ErrorOccurred=True
             break
         g_writtenRecords.put( (p_cursor.rowcount, (timer()-iStart)) )
 
     g_writtenRecords.put( (False, float(0)) )
-    print("\nwriteData Ended")
+    print("\nwriteData({0}): Ended".format(p_index), flush=True)
 
 
 def copyData(p_connections,p_queries):
@@ -219,6 +219,7 @@ def copyData(p_connections,p_queries):
     global g_ErrorOccurred
 
     for i in range(0,len(p_queries)):
+        qIndex=i+1
         g_ErrorOccurred = False
         source=p_queries["source"][i]
         if source=="" or source[0]=="#":
@@ -237,20 +238,20 @@ def copyData(p_connections,p_queries):
         sLogFile="{0}.{1}.running.log".format(dest,table)
         fLogFile=open(sLogFile,'a')
 
-        logPrint("starting copy from [{0}] to [{1}].[{2}], with query:[{3}]".format(source,dest,table,query),fLogFile)
+        logPrint("copyData({0}): starting copy from [{1}] to [{2}].[{3}], with query:[{4}]".format(qIndex, source, dest, table,query),fLogFile)
 
         try:
             bErrorOccurred=False
             iTotalDataLines = 0
 
             if mode.upper()=='T':
-                logPrint("cleaning up table (truncate) [{0}].[{1}]".format(dest,table) ,fLogFile)
+                logPrint("copyData({0}): cleaning up table (truncate) [{1}].[{2}]".format(qIndex, dest,table) ,fLogFile)
                 cCleanData = p_connections[dest].cursor()
                 cCleanData.execute("truncate table {0}".format(table))
                 cCleanData.close()
 
             if mode.upper()=='D':
-                logPrint("cleaning up table (delete) [{0}].[{1}]".format(dest,table) ,fLogFile)
+                logPrint("copyData({0}): cleaning up table (delete) [{1}].[{2}]".format(qIndex, dest, table) ,fLogFile)
                 cCleanData = p_connections[dest].cursor()
                 cCleanData.execute("delete from {0}".format(table))
                 cCleanData.close()
@@ -258,11 +259,11 @@ def copyData(p_connections,p_queries):
             cGetData = p_connections[source].cursor()
             cPutData = p_connections[dest].cursor()
 
-            logPrint('running source query...', fLogFile)
+            logPrint("copyData({0}): running source query...".format(qIndex), fLogFile)
 
             tStart=timer()
             cGetData.execute(query)
-            logPrint('source query took {1:.2f} seconds to reply.'.format((timer() - tStart)), fLogFile)
+            logPrint("copyData({0}): source query took {1:.2f} seconds to reply.".format(qIndex, (timer() - tStart)), fLogFile)
 
             iCols = 0
             sColsPlaceholders = ''
@@ -296,7 +297,7 @@ def copyData(p_connections,p_queries):
                 iQuery = "INSERT INTO {0}({1}) VALUES ({2})".format(table,sColNames,sColsPlaceholders)
                 sIcolType="from source"
 
-            logPrint("insert query (cols={0}): [{1}]".format(sIcolType,iQuery) ,fLogFile)
+            logPrint("copyData({0}): insert query (cols={1}): [{2}]".format(qIndex, sIcolType, iQuery) ,fLogFile)
 
             iTotalDataLinesRead = 0
             iTotalDataLinesWritten = 0
@@ -308,17 +309,17 @@ def copyData(p_connections,p_queries):
             iTotalReadSecs=.001
             iTotalWrittenSecs=.001
 
-            logPrint('entering insert loop...',fLogFile)
+            logPrint("copyData({0}): entering insert loop...".format(qIndex),fLogFile)
 
             while True:
                 try:
                     dummy=g_dataBuffer.get(block=False,timeout=1)
                 except queue.Empty:
                     break
-            g_readT=threading.Thread(target=readData, args=(p_connections[source], cGetData))
+            g_readT=threading.Thread(target=readData, args=(qIndex, p_connections[source], cGetData))
             g_readT.start()
             sleep(2)
-            g_writeT=threading.Thread(target=writeData, args=(p_connections[dest], cPutData, iQuery))
+            g_writeT=threading.Thread(target=writeData, args=(qIndex, p_connections[dest], cPutData, iQuery))
             g_writeT.start()
             print("", flush=True)
             while g_Working:
@@ -349,11 +350,11 @@ def copyData(p_connections,p_queries):
             cPutData.close()
             cGetData.close()
 
-            print ("",flush=True)
-            logPrint('{0} rows copied in {1:.2f} seconds ({2:.2f}/sec).'.format(iTotalDataLinesWritten, (timer() - tStart), (iTotalDataLinesWritten/iTotalWrittenSecs)), fLogFile)
+            print ("", flush=True)
+            logPrint("copyData({0}): {1} rows copied in {2:.2f} seconds ({3:.2f}/sec).".format(qIndex, iTotalDataLinesWritten, (timer() - tStart), (iTotalDataLinesWritten/iTotalWrittenSecs)), fLogFile)
         except (Exception) as error:
             g_ErrorOccurred=True
-            logPrint("ERROR: [{0}]".format(error), fLogFile)
+            logPrint("copyData({0}): ERROR: [{1}]".format(qIndex, error), fLogFile)
         finally:
             fLogFile.close()
             if g_ErrorOccurred:
@@ -369,7 +370,7 @@ def sig_handler(signum, frame):
     global g_readT
     global g_writeT
     global g_Working
-    logPrint('\nsignal received, signaling stop to threads...')
+    logPrint("\nsigHander: break received, signaling stop to threads...")
     g_Working = False
     g_ErrorOccurred = True    
     while True:
@@ -379,13 +380,13 @@ def sig_handler(signum, frame):
             break
     try:
         if g_readT:
-            print("waiting for read thread...")
+            print("sigHandler: waiting for read thread...", flush=True)
             g_readT.join()
         if g_writeT:
-            print("waiting for write thread...")
+            print("sigHandler: waiting for write thread...", flush=True)
             g_writeT.join()
     finally:
-        logPrint('thread cleanup finished.')
+        logPrint("sigHandler: thread cleanup finished.")
 
 
 # MAIN
