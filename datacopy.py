@@ -40,6 +40,8 @@ g_readT = False
 g_writeT = False
 g_Working = True
 
+g_ErrorOccurred=False
+
 def logPrint(psErrorMessage, p_logfile=''):
     sMsg = '{0}: {1}'.format(str(datetime.now()), psErrorMessage)
     print(sMsg, file = sys.stderr, flush=True)
@@ -154,11 +156,13 @@ def preCheck(p_connections, p_queries):
             logPrint("ERROR: data destination [{0}] not declared on connections.csv. giving up.".format(dest))
             sys.exit(2)
 
-
 def readData(p_connection, p_cursor):
+    global g_Working
     global g_dataBuffer
     global g_readRecords
     global g_fetchSize
+    global g_ErrorOccurred
+
 
     print("readData Started")
     while g_Working:
@@ -167,19 +171,22 @@ def readData(p_connection, p_cursor):
             bData = p_cursor.fetchmany(g_fetchSize)
         except (Exception) as error:
             logPrint("DB Read Error: [{0}]".format(error))
-            g_dataBuffer.put(False)
+            g_ErrorOccurred=True
             break
         g_dataBuffer.put(bData, block=True)
         g_readRecords.put( (p_cursor.rowcount, (timer()-rStart)) )
         if not bData:
-            g_dataBuffer.put((False))
             break
-    print("readData Ended")
+    g_dataBuffer.put(False)
+    g_readRecords.put((False,float(0)))
+    print("\nreadData Ended")
  
 
 def writeData(p_connection, p_cursor, p_iQuery):
+    global g_Working
     global g_dataBuffer
     global g_writtenRecords
+    global g_ErrorOccurred
 
     print("writeData Started")
     while g_Working:
@@ -188,20 +195,31 @@ def writeData(p_connection, p_cursor, p_iQuery):
         except queue.Empty:
             continue
         if not bData:
-            g_writtenRecords.put( (False, float(0)) )
+            print ("\nNo more data message received from reader", flush=True)
             break
         iStart=timer()
-        iResult  = p_cursor.executemany(p_iQuery, bData)
-        p_connection.commit()
+        try:
+            iResult  = p_cursor.executemany(p_iQuery, bData)
+            p_connection.commit()
+        except (Exception) as error:
+            logPrint("DB Read Error: [{0}]".format(error))
+            p_connection.rollback()
+            g_ErrorOccurred=True
+            break
         g_writtenRecords.put( (p_cursor.rowcount, (timer()-iStart)) )
-    print("writeData Ended")
+
+    g_writtenRecords.put( (False, float(0)) )
+    print("\nwriteData Ended")
 
 
 def copyData(p_connections,p_queries):
+    global g_Working
     global g_fetchSize
     global g_defaultFetchSize
+    global g_ErrorOccurred
 
     for i in range(0,len(p_queries)):
+        g_ErrorOccurred = False
         source=p_queries["source"][i]
         if source=="" or source[0]=="#":
             continue
@@ -290,10 +308,18 @@ def copyData(p_connections,p_queries):
             iTotalWrittenSecs=.001
 
             logPrint('entering insert loop...',fLogFile)
+
+            while True:
+                try:
+                    dummy=g_dataBuffer.get(block=False,timeout=1)
+                except queue.Empty:
+                    break
             g_readT=threading.Thread(target=readData, args=(p_connections[source], cGetData))
             g_readT.start()
+            sleep(2)
             g_writeT=threading.Thread(target=writeData, args=(p_connections[dest], cPutData, iQuery))
             g_writeT.start()
+            print("", flush=True)
             while g_Working:
                 try:
                     if bFetchRead:
@@ -302,7 +328,7 @@ def copyData(p_connections,p_queries):
                         if not recRead:
                             bFinishedRead=True
                         else:
-                            iTotalDataLinesRead += recRead
+                            iTotalDataLinesRead = recRead
                             iTotalReadSecs += readSecs
                     else:
                         bFetchRead=True
@@ -315,33 +341,36 @@ def copyData(p_connections,p_queries):
                 except queue.Empty:
                     continue
 
-                print("{0} records read ({1:.2f}/sec), {2} records written ({3:.2f}/sec)\r".format(iTotalDataLinesRead, (iTotalDataLinesRead/iTotalReadSecs), iTotalDataLinesWritten, (iTotalDataLinesWritten/iTotalWrittenSecs)),end='')
+                print("\r{0} records read ({1:.2f}/sec), {2} records written ({3:.2f}/sec)       ".format(iTotalDataLinesRead, (iTotalDataLinesRead/iTotalReadSecs), iTotalDataLinesWritten, (iTotalDataLinesWritten/iTotalWrittenSecs)),end='', flush=True)
                 if bFinishedRead and bFinishedWrite:
                     break
 
             cPutData.close()
             cGetData.close()
- 
+
+            print ("",flush=True)
             logPrint('{0} rows copied in {1:.2f} seconds ({2:.2f}/sec).'.format(iTotalDataLinesWritten, (timer() - tStart), (iTotalDataLinesWritten/iTotalWrittenSecs)), fLogFile)
         except (Exception) as error:
-            bErrorOccurred=True
-            p_connections[dest].rollback()
+            g_ErrorOccurred=True
             logPrint("ERROR: [{0}]".format(error), fLogFile)
         finally:
             fLogFile.close()
-            if bErrorOccurred:
+            if g_ErrorOccurred:
                 sLogFileFinalName = "{0}.{1}.ERROR.log".format(dest,table)
             else:
                 sLogFileFinalName = "{0}.{1}.ok.log".format(dest,table)
             if bErrorOccurred or mode==mode.upper():
                 os.rename(sLogFile, sLogFileFinalName)
+        if not g_Working:
+            break
 
 def sig_handler(signum, frame):
     global g_readT
     global g_writeT
     global g_Working
-    logPrint('signal received, signaling stop to threads...')
+    logPrint('\nsignal received, signaling stop to threads...')
     g_Working = False
+    g_ErrorOccurred = True    
     while True:
         try:
             dummy=g_dataBuffer.get(block=False, timeout=1)
