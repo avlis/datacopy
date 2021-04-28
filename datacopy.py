@@ -23,32 +23,6 @@ import queue
 
 import pandas as pd
 
-# GLOBAL VARS
-
-expected_conns_columns=("name","driver","server","database","user","password")
-expected_query_columns=("source","dest","mode","query","table")
-
-g_dataBuffer=queue.Queue(16)
-g_readRecords=queue.Queue()
-g_writtenRecords=queue.Queue()
-
-g_defaultFetchSize=1000
-
-g_fetchSize=g_defaultFetchSize
-
-g_readT = False
-g_writeT = False
-g_Working = True
-
-g_ErrorOccurred=False
-
-def logPrint(psErrorMessage, p_logfile=''):
-    sMsg = "{0}: {1}".format(str(datetime.now()), psErrorMessage)
-    print(sMsg, file = sys.stderr, flush=True)
-    if p_logfile!='':
-        print(sMsg, file = p_logfile, flush=True)
-
-
 def initConnections(p_filename):
     conns={}
     try:
@@ -156,28 +130,6 @@ def preCheck(p_connections, p_queries):
         if dest not in p_connections:
             logPrint("ERROR: data destination [{0}] not declared on connections.csv. giving up.".format(dest))
             sys.exit(2)
-
-def sig_handler(signum, frame):
-    global g_readT
-    global g_writeT
-    global g_Working
-    logPrint("\nsigHander: break received, signaling stop to threads...")
-    g_Working = False
-    g_ErrorOccurred = True    
-    while True:
-        try:
-            dummy=g_dataBuffer.get(block=False, timeout=1)
-        except queue.Empty:
-            break
-    try:
-        if g_readT:
-            print("sigHandler: waiting for read thread...", flush=True)
-            g_readT.join()
-        if g_writeT:
-            print("sigHandler: waiting for write thread...", flush=True)
-            g_writeT.join()
-    finally:
-        logPrint("sigHandler: thread cleanup finished.")
 
 
 # MAIN
