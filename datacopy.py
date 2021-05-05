@@ -131,7 +131,11 @@ def preCheck(p_connections, p_queries):
             logPrint("ERROR: data destination [{0}] not declared on connections.csv. giving up.".format(dest))
             sys.exit(2)
 
-
+        if query[0]=='@':
+            if not os.path.isfile(query[1:]):
+                logPrint("ERROR: query file [{0}] does not exist! giving up.".format(query[1:]))
+                sys.exit(2)
+                
 # MAIN
 def Main():
     global g_readT

@@ -26,6 +26,15 @@ class CopyJobs:
                 else:
                     g_fetchSize=qFetchSize
 
+            if query[0]=='@':
+                try:
+                    with open(query[1:], 'r') as file:
+                        query = file.read()
+                except (Exception) as error:
+                    g_ErrorOccurred=True
+                    logPrint("copyData({0}): ERROR: [{1}]".format(qIndex, error), fLogFile)
+                    continue
+            
             sLogFile="{0}.{1}.running.log".format(dest,table)
             fLogFile=open(sLogFile,'a')
 
