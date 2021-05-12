@@ -1,0 +1,6 @@
+source	dest	mode	table	query	regexes	insert_cols	fetch_size	parallel_writers
+MSSQL	pginst	t	one_table	@sample-query_m.sql	@sample-regex.txt	@l	1000	3
+orcl1	pginst	i	one_table	@sample-query_o.sql	@sample-regex.txt	@l	1000	3
+orcl2	pginst	i	one_table	@sample-query_o.sql	@sample-regex.txt	@l	1000	3
+orcl3	pginst	i	one_table	@sample-query_o.sql	@sample-regex.txt	@l	1000	3
+orcl4	pginst	I	one_table	@sample-query_o.sql	@sample-regex.txt	@l	1000	3
