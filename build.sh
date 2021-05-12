@@ -1,2 +1,2 @@
 #!/bin/bash
-docker build --squash -t bdc:latest .
+docker build --squash -t datacopy:latest .
