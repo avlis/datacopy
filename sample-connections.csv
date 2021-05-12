@@ -1,0 +1,7 @@
+name	driver	server	database	user	password
+pginst	psycopg2	/var/run/postgresql	testbd	testuser	testpassword
+orcl1	cx_Oracle	oracle1.internal.net	OI1	testuser	testpassword
+orcl2	cx_Oracle	oracle1.internal.net	OI2	testuser	testpassword
+orcl3	cx_Oracle	oracle2.internal.net	OI3	testuser	testpassword
+orcl4	cx_Oracle	oracle3.internal.net	OI4	testuser	testpassword
+MSSQL	pyodbc	microsoft-sqlsrv.internal.net	testDB	testuser	testpassword

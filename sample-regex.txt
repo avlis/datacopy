@@ -1,0 +1,4 @@
+#A_VALUE#   somevalue
+#B_VALUE#   someOthervalue
+#DT_INI#    20220101
+#DT_FIN#    20210101
