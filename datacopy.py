@@ -29,8 +29,6 @@ from time import sleep
 from datetime import datetime
 
 import multiprocessing as mp
-import multiprocessing.queues
-
 mp.set_start_method('fork')
 
 import queue
@@ -128,7 +126,7 @@ def initConnections(p_name, p_readOnly, p_qtd, p_logFile):
     if p_name in g_connections:
         c=g_connections[p_name]
 
-    logPrint("initConnections[{0}]: trying to connect...".format(p_name), p_logFile)
+    print("initConnections[{0}]: trying to connect...".format(p_name), file=sys.stderr, flush=True)
     if c["driver"]=="pyodbc":
         try:
             import pyodbc
@@ -181,10 +179,11 @@ def initConnections(p_name, p_readOnly, p_qtd, p_logFile):
     try:
         sGetVersion=check_bd_version_cmd[c["driver"]]
         cur=nc[0].cursor()
-        logPrint("initConnections({0}): Testing connection, getting version with [{1}]...".format(p_name, sGetVersion), p_logFile)
+        print("initConnections({0}): Testing connection, getting version with [{1}]...".format(p_name, sGetVersion), file=sys.stderr, flush=True)
         cur.execute(sGetVersion)
         db_version = cur.fetchone()
-        logPrint("initConnections({0}): ok, connected to DB version: {1}".format(p_name, db_version), p_logFile)
+        print("initConnections({0}): ok, connected to DB version: {1}".format(p_name, db_version), file=sys.stderr, flush=True)
+        logPrint("initConnections({0}): connected".format(p_name, db_version), p_logFile)
         cur.close()
     except (Exception) as error:
         logPrint("initConnections({0}): error [{1}]".format(p_name, error), p_logFile)
@@ -514,7 +513,6 @@ def copyData():
 
             bFetchRead = True
             bFinishedRead = False
-            bFinishedWrite = False
 
             logPrint("copyData({0}): entering insert loop...".format(prettyJobID),fLogFile)
 
@@ -592,7 +590,7 @@ def copyData():
                         else:
                             iTotalDataLinesWritten += recWritten
                             iTotalWrittenSecs += writeSecs
-                except mp.queues.Empty:
+                except queue.Empty:
                     None
 
                 print("\r{0:,} records read ({1:.2f}/sec), {2:,} records written ({3:.2f}/sec), data queue len: {4}       ".format(iTotalDataLinesRead, (iTotalDataLinesRead/iTotalReadSecs), iTotalDataLinesWritten, (iTotalDataLinesWritten/iTotalWrittenSecs), g_dataBuffer.qsize()), file=sys.stdout, end='', flush=True)
