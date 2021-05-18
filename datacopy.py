@@ -29,8 +29,6 @@ from time import sleep
 from datetime import datetime
 
 import multiprocessing as mp
-import multiprocessing.queues
-
 mp.set_start_method('fork')
 
 import queue
@@ -128,7 +126,7 @@ def initConnections(p_name, p_readOnly, p_qtd, p_logFile):
     if p_name in g_connections:
         c=g_connections[p_name]
 
-    logPrint("initConnections[{0}]: trying to connect...".format(p_name), p_logFile)
+    print("initConnections[{0}]: trying to connect...".format(p_name), file=sys.stderr, flush=True)
     if c["driver"]=="pyodbc":
         try:
             import pyodbc
@@ -181,10 +179,11 @@ def initConnections(p_name, p_readOnly, p_qtd, p_logFile):
     try:
         sGetVersion=check_bd_version_cmd[c["driver"]]
         cur=nc[0].cursor()
-        logPrint("initConnections({0}): Testing connection, getting version with [{1}]...".format(p_name, sGetVersion), p_logFile)
+        print("initConnections({0}): Testing connection, getting version with [{1}]...".format(p_name, sGetVersion), file=sys.stderr, flush=True)
         cur.execute(sGetVersion)
         db_version = cur.fetchone()
-        logPrint("initConnections({0}): ok, connected to DB version: {1}".format(p_name, db_version), p_logFile)
+        print("initConnections({0}): ok, connected to DB version: {1}".format(p_name, db_version), file=sys.stderr, flush=True)
+        logPrint("initConnections({0}): connected".format(p_name, db_version), p_logFile)
         cur.close()
     except (Exception) as error:
         logPrint("initConnections({0}): error [{1}]".format(p_name, error), p_logFile)
@@ -256,7 +255,12 @@ def readData(p_index, p_connection, p_cursor, p_fetchSize, p_query, p_closeStrea
 
     print("\nreadData({0}): Started".format(p_index), file=sys.stderr, flush=True)
     if p_query:
-        p_cursor.execute(p_query)
+        try:
+            p_cursor.execute(p_query)
+        except (Exception) as error:
+            logPrint("ReadData({0}): DB Error: [{1}]".format(p_index, error), p_logFile)
+            g_ErrorOccurred=True
+
     while g_Working and not g_ErrorOccurred:
         try:
             rStart=timer()
@@ -275,7 +279,7 @@ def readData(p_index, p_connection, p_cursor, p_fetchSize, p_query, p_closeStrea
             g_readRecords.put( (p_index, iRowCount, (timer()-rStart)) )
 
         g_dataBuffer.put(bData, block=True)
-    if p_closeStream:
+    if p_closeStream or g_ErrorOccurred:
         print("\nreadData({0}): signaling write threads of the end of data.".format(p_index), file=sys.stderr, flush=True)
         for x in range(g_nbrParallelWriters):
             g_dataBuffer.put(False)
@@ -449,7 +453,7 @@ def copyData():
         logPrint("copyData({0}): number of writers for this query: [{1}]".format(prettyJobID, g_nbrParallelWriters) ,fLogFile)
 
         try:
-            bErrorOccurred=False
+            g_ErrorOccurred=False
             if not g_testQueries:
                 if mode.upper()=='T':
                     logPrint("copyData({0}): cleaning up table (truncate) [{1}].[{2}]".format(prettyJobID, dest,table) ,fLogFile)
@@ -514,7 +518,6 @@ def copyData():
 
             bFetchRead = True
             bFinishedRead = False
-            bFinishedWrite = False
 
             logPrint("copyData({0}): entering insert loop...".format(prettyJobID),fLogFile)
 
@@ -592,13 +595,27 @@ def copyData():
                         else:
                             iTotalDataLinesWritten += recWritten
                             iTotalWrittenSecs += writeSecs
-                except mp.queues.Empty:
+                except queue.Empty:
                     None
 
                 print("\r{0:,} records read ({1:.2f}/sec), {2:,} records written ({3:.2f}/sec), data queue len: {4}       ".format(iTotalDataLinesRead, (iTotalDataLinesRead/iTotalReadSecs), iTotalDataLinesWritten, (iTotalDataLinesWritten/iTotalWrittenSecs), g_dataBuffer.qsize()), file=sys.stdout, end='', flush=True)
 
+            if g_ErrorOccurred:
+                #clean up any remaining data
+                while True:
+                    try:
+                        dummy=g_dataBuffer.get(block=True,timeout=1)
+                    except queue.Empty:
+                        break
+                for x in range(g_nbrParallelWriters):
+                    g_dataBuffer.put(False)
+
             print("\n", file=sys.stdout, flush=True)
             logPrint("copyData({0}): {1:,} rows copied in {2:.2f} seconds ({3:.2f}/sec).".format(prettyJobID, iTotalDataLinesWritten, (timer() - tStart), (iTotalDataLinesWritten/iTotalWrittenSecs)), fLogFile)
+            for p in g_readP:
+                p.terminate()
+            for p in g_writeP:
+                p.terminate()
 
         except (Exception) as error:
             g_ErrorOccurred=True
@@ -609,7 +626,7 @@ def copyData():
                 sLogFileFinalName = "{0}.ERROR.log".format(sLogFilePrefix)
             else:
                 sLogFileFinalName = "{0}.ok.log".format(sLogFilePrefix)
-            if bErrorOccurred or mode==mode.upper():
+            if g_ErrorOccurred or mode==mode.upper():
                 os.rename("{0}.running.log".format(sLogFilePrefix), sLogFileFinalName)
         jobID+=1
 
