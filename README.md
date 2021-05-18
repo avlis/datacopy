@@ -14,6 +14,7 @@ the following env vars can be used to control it:
 - QUEUE_SIZE: (default 256) 
 - REUSE_WRITERS: (default no)
 - QUEUE_FB4NEWR: default 3, means that the buffer can be only 1/3 full before starting the next reader, if reusing writers.
+- STOP_JOBS_ON_ERROR (default yes)
 
 See sample-* files to have an idea of usage.
 
@@ -32,9 +33,8 @@ See sample-* files to have an idea of usage.
         - i just inserts, leave log file open for next query
         - I insert and close log file.
 
-- query: can be a "select * from...", but if first char is @, means a file path to read a query from.
+- query: can be a "select * from...", but if first char is @, means a file path to read a query from. or it can be just a table name, and it will build automatically a SELECT "<col1>","<col2>",(..)"<colN>" from <table>.
 - table: destination table name.
-
 
 
 ### Optional Columns:
@@ -43,12 +43,12 @@ See sample-* files to have an idea of usage.
 
 - parallel_writers: how many processes are launched to process the queue and to write to database. default 1.
 
-- regexes: can be a placeholder/value, but if first char is @, reads placeolders [tab] values from a file
+- regexes: can be a placeholder/value, but if first char is @, reads placeolders values from a file
 
-- insert_cols: can be a list of columns to build the insert statement, or:
+- insert_cols: can be a list of columns to build the insert statement (comma separated), or:
     - @: build from source query column names (default option)
     - @l: build from source, lowering
     - @u: build from source, upping
     - anything else: comma delimited list of column names.
 
-
+- ignore_cols: can be a list of column names, separated by comma. only used it the query field does not have a select statement, only a table name.
