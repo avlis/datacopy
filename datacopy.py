@@ -158,7 +158,7 @@ def initConnections(p_name, p_readOnly, p_qtd, p_logFile):
                 nc[x]=pyodbc.connect(driver="{ODBC Driver 17 for SQL Server}", server=c["server"], database=c["database"], user=c["user"], password=c["password"],encoding = "UTF-8", nencoding = "UTF-8", readOnly = p_readOnly )
         except (Exception, pyodbc.DatabaseError) as error:
             logPrint("initConnections({0}): DB error [{1}]".format(p_name,error), p_logFile)
-            sys.exit(1)
+            sys.exit(2)
 
     if c["driver"] == "cx_Oracle":
         try:
@@ -168,7 +168,7 @@ def initConnections(p_name, p_readOnly, p_qtd, p_logFile):
                 nc[x].outputtypehandler = cx_Oracle_OutputTypeHandler
         except (Exception) as error:
             logPrint("initConnections({0}): DB error [{1}]".format(p_name,error), p_logFile)
-            sys.exit(1)
+            sys.exit(2)
 
     if c["driver"] == "psycopg2":
         try:
@@ -180,7 +180,7 @@ def initConnections(p_name, p_readOnly, p_qtd, p_logFile):
                 nc[x].readonly = p_readOnly
         except (Exception) as error:
             logPrint("initConnections({0}): DB error [{1}]".format(p_name,error), p_logFile)
-            sys.exit(1)
+            sys.exit(2)
 
     if c["driver"] == "mysql":
         try:
@@ -189,7 +189,7 @@ def initConnections(p_name, p_readOnly, p_qtd, p_logFile):
                 nc[x]=mysql.connector.connect(host=c["server"], database=c["database"], user=c["user"], password = c["password"])
         except (Exception) as error:
             logPrint("initConnections({0}): DB error [{1}]".format(p_name,error), p_logFile)
-            sys.exit(1)
+            sys.exit(2)
 
     if c["driver"] == "mariadb":
         try:
@@ -198,7 +198,7 @@ def initConnections(p_name, p_readOnly, p_qtd, p_logFile):
                 nc[x]=mariadb.connect(host=c["server"], database=c["database"], user=c["user"], password = c["password"])
         except (Exception) as error:
             logPrint("initConnections({0}): DB error [{1}]".format(p_name,error), p_logFile)
-            sys.exit(1)
+            sys.exit(2)
 
     try:
         sGetVersion = check_bd_version_cmd[c["driver"]]
@@ -211,7 +211,7 @@ def initConnections(p_name, p_readOnly, p_qtd, p_logFile):
         cur.close()
     except (Exception) as error:
         logPrint("initConnections({0}): error [{1}]".format(p_name, error), p_logFile)
-        sys.exit(1)
+        sys.exit(2)
 
     return nc
 
@@ -223,7 +223,7 @@ def loadQueries(p_filename):
         g_queries = g_queriesRaw[ g_queriesRaw.source.str.contains("^[A-Z,a-z,0-9]") ].reset_index()
     except (Exception) as error:
         logPrint("error Loading [{0}]: [{1}]".format(p_filename, error))
-        sys.exit(1)
+        sys.exit(3)
 
 def preCheck():
     global g_connections
@@ -233,7 +233,7 @@ def preCheck():
     for ecol in expected_query_columns:
         if ecol not in g_queries:
             logPrint("Missing column on queries file: [{0}]".format(ecol))
-            sys.exit(2)
+            sys.exit(4)
 
     for i in range(0,len(g_queries)):
         source = g_queries["source"][i]
@@ -246,22 +246,22 @@ def preCheck():
 
         if source not in g_connections:
             logPrint("ERROR: data source [{0}] not declared on connections.csv. giving up.".format(source))
-            sys.exit(2)
+            sys.exit(4)
         if dest not in g_connections:
             logPrint("ERROR: data destination [{0}] not declared on connections.csv. giving up.".format(dest))
-            sys.exit(2)
+            sys.exit(4)
 
         if query[0] == '@':
             if not os.path.isfile(query[1:]):
                 logPrint("ERROR: query file [{0}] does not exist! giving up.".format(query[1:]))
-                sys.exit(2)
+                sys.exit(4)
 
         if "regexes" in g_queries:
             regex = g_queries["regexes"][i]
             if regex[0] == '@':
                 if not os.path.isfile(regex[1:]):
                     logPrint("ERROR: regex file [{0}] does not exist! giving up.".format(regex[1:]))
-                    sys.exit(2)
+                    sys.exit(4)
 
 
 def readData(p_index, p_connection, p_cursor, p_fetchSize, p_query, p_closeStream, p_nbrParallelWriters, p_logFile):
@@ -486,7 +486,7 @@ def copyData():
         except:
             g_ErrorOccurred.value = True
             logPrint("copyData::openLogFile({0}): ERROR: [{1}]".format(prettyJobID, error))
-            sys.exit(1)
+            sys.exit(5)
 
         try:
             cGetConn[jobID] = initConnections(source, True, 1, fLogFile)[0]
@@ -496,7 +496,7 @@ def copyData():
 
             if "SELECT " not in query.upper():
                 sSourceTableName=query
-                query="SELECT * from {0}".format(sSourceTableName)
+                query="SELECT * FROM {0} WHERE 1=0".format(sSourceTableName)
                 if "ignore_cols" in g_queries:
                     logPrint("copyData({0}): need to ignore some columns, prefetching table definition...".format(prettyJobID), fLogFile)
                     tIgnoreCols = (g_queries["ignore_cols"][jobID]).split(',')
@@ -509,7 +509,7 @@ def copyData():
                     query="SELECT {0} FROM {1}".format(sColNames,sSourceTableName)
 
 
-            logPrint("copyData({0}): running source query...".format(prettyJobID), fLogFile)
+            logPrint("copyData({0}): running source query: [{1}]".format(prettyJobID, query), fLogFile)
 
             tStart = timer()
             cGetData[jobID].execute(query)
@@ -547,7 +547,7 @@ def copyData():
 
             logPrint("copyData({0}): insert query (cols = {1}): [{2}]".format(prettyJobID, sIcolType, iQuery) ,fLogFile)
 
-            logPrint("copyData({0}): starting reading from [{1}] to [{2}].[{3}], with query:\n***\n{4}\n***".format(prettyJobID, source, dest, table,query),fLogFile)
+            logPrint("copyData({0}): starting reading from [{1}] to [{2}].[{3}], with query:\n***\n{4}\n***".format(prettyJobID, source, dest, table,query), fLogFile)
             g_readP[jobID]=mp.Process(target=readData, args = (prettyJobID, cGetConn[jobID], cGetData[jobID], fetchSize, None, bCloseStream, nbrParallelWriters, fLogFile))
             iTotalDataLinesRead = 0
             iTotalReadSecs = .001
@@ -667,7 +667,7 @@ def copyData():
             logPrint("copyData({0}): ERROR: [{1}]".format(prettyJobID, error), fLogFile)
         finally:
             #if a control-c occurred, also rename file
-            if mode == mode.upper() or not g_Working.value:
+            if mode == mode.upper() or not g_Working.value or (g_stopJobsOnError and g_ErrorOccurred.value):
                 fLogFile.close()
                 if g_ErrorOccurred.value:
                     sLogFileFinalName = "{0}.ERROR.log".format(sLogFilePrefix)
@@ -730,7 +730,10 @@ def Main():
     preCheck()
     copyData()
     print ("exited copydata!")
-    sys.exit(0)
+    if g_ErrorOccurred.value:
+        sys.exit(6)
+    else:
+        sys.exit(0)
 
 if __name__ == '__main__':
     Main()

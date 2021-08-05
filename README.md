@@ -19,7 +19,7 @@ the following env vars can be used to control it:
 See sample-* files to have an idea of usage.
 
 
-### JOB_FILE COLUMNS
+### JOB_FILE COLUMNS (tab delimited)
 
 - source, dest: must match something on first column of connections.csv
 
@@ -33,7 +33,7 @@ See sample-* files to have an idea of usage.
         - i just inserts, leave log file open for next query
         - I insert and close log file.
 
-- query: can be a "select * from...", but if first char is @, means a file path to read a query from. or it can be just a table name, and it will build automatically a SELECT "<col1>","<col2>",(..)"<colN>" from <table>.
+- query: can be a "select * from...", but if first char is @, means a file path to read a query from. or it can be just a table name, and it will build automatically a SELECT "[col1]","[col2]",(..)"[colN]" from [table].
 - table: destination table name.
 
 
@@ -43,12 +43,12 @@ See sample-* files to have an idea of usage.
 
 - parallel_writers: how many processes are launched to process the queue and to write to database. default 1.
 
-- regexes: can be a placeholder/value, but if first char is @, reads placeolders values from a file
+- regexes: can be a placeholder/value, but if first char is @, reads placeolders values from a file, tab delimited
 
-- insert_cols: can be a list of columns to build the insert statement (comma separated), or:
+- insert_cols: can be a list of columns to build the insert statement (comma delimited), or:
     - @: build from source query column names (default option)
-    - @l: build from source, lowering
-    - @u: build from source, upping
+    - @l: build from source, lowering case
+    - @u: build from source, upping case
     - anything else: comma delimited list of column names.
 
-- ignore_cols: can be a list of column names, separated by comma. only used it the query field does not have a select statement, only a table name.
+- ignore_cols: a list of column names, separated by comma. only used it the query field does not have a select statement, just a table name.
