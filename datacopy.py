@@ -667,7 +667,7 @@ def copyData():
             logPrint("copyData({0}): ERROR: [{1}]".format(prettyJobID, error), fLogFile)
         finally:
             #if a control-c occurred, also rename file
-            if mode == mode.upper() or not g_Working.value:
+            if mode == mode.upper() or not g_Working.value or (g_stopJobsOnError and g_ErrorOccurred.value):
                 fLogFile.close()
                 if g_ErrorOccurred.value:
                     sLogFileFinalName = "{0}.ERROR.log".format(sLogFilePrefix)
