@@ -496,7 +496,7 @@ def copyData():
 
             if "SELECT " not in query.upper():
                 sSourceTableName=query
-                query="SELECT * FROM {0} WHERE 1=0".format(sSourceTableName)
+                query="SELECT * FROM {0}".format(sSourceTableName)
                 if "ignore_cols" in g_queries:
                     logPrint("copyData({0}): need to ignore some columns, prefetching table definition...".format(prettyJobID), fLogFile)
                     tIgnoreCols = (g_queries["ignore_cols"][jobID]).split(',')
@@ -547,7 +547,7 @@ def copyData():
 
             logPrint("copyData({0}): insert query (cols = {1}): [{2}]".format(prettyJobID, sIcolType, iQuery) ,fLogFile)
 
-            logPrint("copyData({0}): starting reading from [{1}] to [{2}].[{3}], with query:\n***\n{4}\n***".format(prettyJobID, source, dest, table,query), fLogFile)
+            logPrint("copyData({0}): starting reading from [{1}] to [{2}].[{3}], with query:\n***\n{4}\n***".format(prettyJobID, source, dest, table, query), fLogFile)
             g_readP[jobID]=mp.Process(target=readData, args = (prettyJobID, cGetConn[jobID], cGetData[jobID], fetchSize, None, bCloseStream, nbrParallelWriters, fLogFile))
             iTotalDataLinesRead = 0
             iTotalReadSecs = .001
