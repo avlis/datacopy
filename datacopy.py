@@ -107,8 +107,8 @@ def logPrint(psErrorMessage, p_logfile = ''):
     if p_logfile != '':
         print(sMsg, file = p_logfile, flush = True)
 
-def statsPrint(p_type,p_jobid, p_recs, p_secs, p_logfile = ''):
-    sMsg = "stats:{0}:{1}:{2}:{3:.2f}:{4}".format(p_type,p_jobid,p_recs,p_secs,datetime.now().strftime('%Y%m%d%H%M%S.%f'))
+def statsPrint(p_type,p_jobid, p_recs, p_secs, p_threads, p_logfile = ''):
+    sMsg = "stats:{0}:{1}:{2}:{3:.2f}:{4}:{5}".format(p_type, p_jobid, p_recs, p_secs, p_threads, datetime.now().strftime('%Y%m%d%H%M%S.%f'))
     if p_logfile != '':
         print(sMsg, file = p_logfile, flush = True)        
 
@@ -215,6 +215,26 @@ def initConnections(p_name, p_readOnly, p_qtd, p_logFile):
 
     return nc
 
+def initCursor(p_conn, p_jobID, p_fetchSize, p_UseServerSideCursors):
+    # postgres: try not to fetch all rows to memory, using server side cursors
+    try:
+        if p_UseServerSideCursors:
+            print('trying to get server side cursor...', file=sys.stderr, flush=True)
+            newCursor = p_conn.cursor(name='jobid-{0}'.format(p_jobID))
+        else:
+            print('trying to get client side cursor...', file=sys.stderr, flush=True)
+            newCursor = p_conn.cursor()
+    except (Exception) as error:
+        print('server side cursor did not work, getting a normal cursor: [{0}]'.format(error), file=sys.stderr, flush=True)
+        newCursor = p_conn.cursor()
+    try:
+        #only works on postgres...                            
+        newCursor.itersize = p_fetchSize
+    except (Exception) as error:
+        print('could not set itersize: [{0}]'.format(error), file=sys.stderr, flush=True)  
+
+    return newCursor  
+
 def loadQueries(p_filename):
     global g_queries
     try:
@@ -287,27 +307,26 @@ def readData(p_index, p_connection, p_cursor, p_fetchSize, p_query, p_closeStrea
             logPrint("ReadData({0}): DB Error: [{1}]".format(p_index, error), p_logFile)
             g_ErrorOccurred.value = True
 
-    while g_Working.value:
-        try:
-            rStart = timer()
-            bData = p_cursor.fetchmany(p_fetchSize)
-        except (Exception) as error:
-            logPrint("ReadData({0}): DB Error: [{1}]".format(p_index, error), p_logFile)
-            g_ErrorOccurred.value = True
-            break
-        if not bData:
-            break
-        
-        if p_cursor.rowcount>0:
-            iRowCount = p_cursor.rowcount
-        else:
-            iRowCount = len(bData)
-        if iRowCount>0:
-            g_eventStream.put( (READ_E, p_index, iRowCount, (timer()-rStart)) )
+    if not g_ErrorOccurred.value:
+        while g_Working.value:
+            try:
+                rStart = timer()
+                bData = p_cursor.fetchmany(p_fetchSize)
+            except (Exception) as error:
+                logPrint("ReadData({0}): DB Error: [{1}]".format(p_index, error), p_logFile)
+                g_ErrorOccurred.value = True
+                break
+            if not bData:
+                break
 
-        g_dataBuffer.put( (g_seqnbr.value, COD, bData), block = True )
-        #print("pushed g_seqnbr {0} (data)".format(g_seqnbr.value), file=sys.stderr, flush = True)
-        g_seqnbr.value += 1
+            # not using p_cursor.rowcount because it is not consistent across drivers...
+            iRowCount = len(bData)
+            if iRowCount>0:
+                g_eventStream.put( (READ_E, p_index, iRowCount, (timer()-rStart)) )
+
+            g_dataBuffer.put( (g_seqnbr.value, COD, bData), block = True )
+            #print("pushed g_seqnbr {0} (data)".format(g_seqnbr.value), file=sys.stderr, flush = True)
+            g_seqnbr.value += 1
 
     if p_closeStream:
         print("\nreadData({0}:{1}): signaling write threads of the end of data.".format(p_index,g_seqnbr.value), file=sys.stderr, flush = True)
@@ -327,7 +346,7 @@ def readData(p_index, p_connection, p_cursor, p_fetchSize, p_query, p_closeStrea
     except:
         None
 
-    g_eventStream.put((READ_E, p_index, False,float(0)))
+    g_eventStream.put((READ_E, p_index, False, float(0)))
     print("\nreadData({0}): Ended".format(p_index), file=sys.stderr, flush = True)
 
 def writeData(p_index, p_connection, p_cursor, p_iQuery, p_logFile, p_thread):
@@ -490,40 +509,48 @@ def copyData():
 
         try:
             cGetConn[jobID] = initConnections(source, True, 1, fLogFile)[0]
-            cGetData[jobID] = cGetConn[jobID].cursor()
 
             sColNames = ''
+            sColsPlaceholders = ''
+            bUseServerSideCursors = False
+            
+            isSelect = re.search('(^|[ \t\n]+)SELECT[ \t\n]+', query.upper())
+            if not isSelect:
+                sSourceTableName = query
+                bUseServerSideCursors = True
 
-            if "SELECT " not in query.upper():
-                sSourceTableName=query
-                query="SELECT * FROM {0}".format(sSourceTableName)
+                logPrint("copyData({0}): prefetching table definition...".format(prettyJobID), fLogFile)
+                tdCursor = cGetConn[jobID].cursor()
+                tdCursor.execute("SELECT * FROM {0} WHERE 1=0".format(sSourceTableName))
                 if "ignore_cols" in g_queries:
-                    logPrint("copyData({0}): need to ignore some columns, prefetching table definition...".format(prettyJobID), fLogFile)
                     tIgnoreCols = (g_queries["ignore_cols"][jobID]).split(',')
-                    cGetData[jobID].execute(query)
-                    for col in cGetData[jobID].description:
-                        if col[0] not in tIgnoreCols:
-                            sColNames = '{0}"{1}",'.format(sColNames,col[0])
-                    sColNames = sColNames[:-1]
+                else:
+                    tIgnoreCols = ()
+                for col in tdCursor.description:
+                    if col[0] not in tIgnoreCols:
+                        sColNames = '{0}"{1}",'.format(sColNames,col[0])
+                        sColsPlaceholders = sColsPlaceholders + "%s,"
+                sColNames = sColNames[:-1]
+                sColsPlaceholders = sColsPlaceholders[:-1]
 
-                    query="SELECT {0} FROM {1}".format(sColNames,sSourceTableName)
-
+                tdCursor.close()
+                query="SELECT {0} FROM {1}".format(sColNames,sSourceTableName)
 
             logPrint("copyData({0}): running source query: [{1}]".format(prettyJobID, query), fLogFile)
 
             tStart = timer()
+            cGetData[jobID] = initCursor(cGetConn[jobID], jobID, fetchSize, bUseServerSideCursors) 
+
             cGetData[jobID].execute(query)
             logPrint("copyData({0}): source query took {1:.2f} seconds to reply.".format(prettyJobID, (timer() - tStart)), fLogFile)
 
-            sColNames = ''
-            sColsPlaceholders = ''
-                
-            for col in cGetData[jobID].description:
-                sColNames = sColNames + '"{0}",'.format(col[0])
-                sColsPlaceholders = sColsPlaceholders + "%s,"
+            if sColNames == '':
+                for col in cGetData[jobID].description:
+                    sColNames = sColNames + '"{0}",'.format(col[0])
+                    sColsPlaceholders = sColsPlaceholders + "%s,"
 
-            sColNames = sColNames[:-1]
-            sColsPlaceholders = sColsPlaceholders[:-1]
+                sColNames = sColNames[:-1]
+                sColsPlaceholders = sColsPlaceholders[:-1]
 
             iQuery = ''
             if "insert_cols" in g_queries:
@@ -602,14 +629,14 @@ def copyData():
                     if eType == READ_E:
                         if not recs:
                             logPrint("readData({0}): {1:,} rows read in {2:.2f} seconds ({3:.2f}/sec).".format(prettyJobID, iTotalDataLinesRead, iTotalReadSecs, (iTotalDataLinesRead/iTotalReadSecs)), fLogFile)
-                            statsPrint('read', prettyJobID, iTotalDataLinesRead, iTotalReadSecs, fLogFile)
+                            statsPrint('read', prettyJobID, iTotalDataLinesRead, iTotalReadSecs, 1, fLogFile)
                             if not bFinishedRead:
                                 if not bCloseStream:
                                     bWait4Buffers = True
                                 else:
                                     print("no more jobs for reused writers, moving on", file=sys.stderr, flush = True)
                         else:
-                            iTotalDataLinesRead = recs
+                            iTotalDataLinesRead += recs
                             iTotalReadSecs += secs
                     else: # WRITE_E
                         if not recs:
@@ -632,7 +659,7 @@ def copyData():
                                     g_ErrorOccurred.value = True
                                     logPrint("copyData::InnerPrepQuery({0}): ERROR: [{1}]".format(prettyJobID, error), fLogFile)
                                 cGetConn[jobID] = initConnections(source, True, 1, fLogFile)[0]
-                                cGetData[jobID] = cGetConn[jobID].cursor()
+                                cGetData[jobID] = initCursor(cGetConn[jobID], jobID, fetchSize, True)
                                 logPrint("copyData({0}): starting reading from [{1}] to [{2}].[{3}], with query:\n***\n{4}\n***".format(prettyJobID, source, dest, table,query),fLogFile)
                                 g_readP[jobID]=mp.Process(target=readData, args = (prettyJobID, cGetConn[jobID], cGetData[jobID], fetchSize, query, bCloseStream, nbrParallelWriters, fLogFile))
                                 iTotalDataLinesRead = 0
@@ -660,7 +687,7 @@ def copyData():
 
             print("\n", file=sys.stdout, flush = True)
             logPrint("copyData({0}): {1:,} rows copied in {2:.2f} seconds ({3:.2f}/sec).".format(prettyJobID, iTotalDataLinesWritten, iTotalWrittenSecs, (iTotalDataLinesWritten/iTotalWrittenSecs)), fLogFile)
-            statsPrint('write', prettyJobID, iTotalDataLinesWritten, iTotalWrittenSecs, fLogFile)
+            statsPrint('write', prettyJobID, iTotalDataLinesWritten, iTotalWrittenSecs, nbrParallelWriters, fLogFile)
 
         except (Exception) as error:
             g_ErrorOccurred.value = True
