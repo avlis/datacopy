@@ -52,3 +52,27 @@ See sample-* files to have an idea of usage.
     - anything else: comma delimited list of column names.
 
 - ignore_cols: a list of column names, separated by comma. only used it the query field does not have a select statement, just a table name.
+
+## stats
+if you grep -E '^stats:' \*.log, you can get some info about lines read and wrote.
+
+example (csv with 8 jobs, with REUSE_WRITERS=yes):
+```
+stats:read:1:2606409:29.33:1:20210806071738.140707
+stats:read:2:11221622:138.46:1:20210806072136.663124
+stats:read:3:2310055:26.87:1:20210806072224.235138
+stats:read:4:309374:3.86:1:20210806072231.196543
+stats:read:5:24836387:288.38:1:20210806073109.770731
+stats:read:6:7174513:91.45:1:20210806073405.059415
+stats:read:7:9938499:126.50:1:20210806073757.953427
+stats:read:8:14102901:163.66:1:20210806074255.200570
+stats:write:8:72499760:10782.49:3:20210806074256.784539
+```
+
+(colon is used as separator, because if you grep a bunch of files, you will get the file name as first column)
+fields:
+- jobID (line number on jobs.csv file)
+- lines read or written
+- seconds: total seconds of read or write operations. on multi thread, it means you need to split per thread count.
+- thread count
+- timestamp
