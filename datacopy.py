@@ -45,6 +45,7 @@ E_WRITE = 2
 
 L_INFO = 1
 L_DEBUG = 2
+L_STATS = 4
 L_END = 255
 L_OPEN = 16
 L_CLOSE = 32
@@ -120,8 +121,10 @@ def logPrint(p_ErrorMessage, p_logLevel=L_INFO):
     g_logStream.put((p_logLevel, sMsg))
 
 def statsPrint(p_type,p_jobid, p_recs, p_secs, p_threads):
+    global L_STATS
+
     sMsg = "stats:{0}:{1}:{2}:{3:.2f}:{4}:{5}".format(p_type, p_jobid, p_recs, p_secs, p_threads, datetime.now().strftime('%Y%m%d%H%M%S.%f'))
-    g_logStream.put((L_INFO, sMsg))
+    g_logStream.put((L_STATS, sMsg))
 
 def cx_Oracle_OutputTypeHandler(cursor, name, defaultType, size, precision, scale):
     import cx_Oracle
@@ -331,6 +334,7 @@ def writeLogFile():
 
     global L_INFO
     global L_DEBUG
+    global L_STATS
     global L_OPEN
     global L_CLOSE
     global L_END
@@ -360,6 +364,13 @@ def writeLogFile():
         if logLevel == L_DEBUG and g_DEBUG:
             print(sMsg, file=sys.stderr, flush=True)
             continue
+        
+        if logLevel == L_STATS:
+            if logFile:
+                try:
+                    print(sMsg, file=logFile, flush=True)
+                except:
+                    pass 
 
         if logLevel == L_OPEN:
             rStart = timer()
@@ -374,7 +385,7 @@ def writeLogFile():
 
         if logLevel == L_CLOSE:
             if logFile:
-                print("stats:time:0:{0:.2f}:0:{1}".format(timer()-rStart, datetime.now().strftime('%Y%m%d%H%M%S.%f')), file=logFile, flush=True)
+                print("stats:totalTime:0:{0:.2f}:0:{1}".format(timer()-rStart, datetime.now().strftime('%Y%m%d%H%M%S.%f')), file=logFile, flush=True)
                 logFile.close()
                 logFile=None
                 if g_ErrorOccurred.value:
@@ -411,7 +422,9 @@ def readData(p_index, p_connection, p_cursor, p_fetchSize, p_query, p_closeStrea
     logPrint("\nreadData({0}): Started".format(p_index), L_DEBUG)
     if p_query:
         try:
+            tStart = timer()
             p_cursor.execute(p_query)
+            statsPrint('execQuery', p_index, 0, timer() - tStart, 0)
         except (Exception) as error:
             logPrint("ReadData({0}): DB Error: [{1}]".format(p_index, error))
             g_ErrorOccurred.value = True
@@ -477,7 +490,7 @@ def writeData(p_index, p_connection, p_cursor, p_iQuery, p_thread):
         except queue.Empty:
             continue
         if FOD == D_EOD:
-            print ("\nwriteData({0}:{1}:{2}): 'no more data' message received".format(p_index, p_thread, seqnbr), file=sys.stderr, flush = True)
+            logPrint("\nwriteData({0}:{1}:{2}): 'no more data' message received".format(p_index, p_thread, seqnbr), L_DEBUG)
             break
         iStart = timer()
         try:
@@ -643,6 +656,7 @@ def copyData():
 
             cGetData[jobID].execute(query)
             logPrint("copyData({0}): source query took {1:.2f} seconds to reply.".format(prettyJobID, (timer() - tStart)))
+            statsPrint('execQuery', prettyJobID, 0, timer() - tStart, 0)
 
             if sColNames == '':
                 for col in cGetData[jobID].description:
