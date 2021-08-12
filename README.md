@@ -58,21 +58,31 @@ if you grep -E '^stats:' \*.log, you can get some info about lines read and wrot
 
 example (csv with 8 jobs, with REUSE_WRITERS=yes):
 ```
-stats:read:1:2606409:29.33:1:20210806071738.140707
-stats:read:2:11221622:138.46:1:20210806072136.663124
-stats:read:3:2310055:26.87:1:20210806072224.235138
-stats:read:4:309374:3.86:1:20210806072231.196543
-stats:read:5:24836387:288.38:1:20210806073109.770731
-stats:read:6:7174513:91.45:1:20210806073405.059415
-stats:read:7:9938499:126.50:1:20210806073757.953427
-stats:read:8:14102901:163.66:1:20210806074255.200570
-stats:write:8:72499760:10782.49:3:20210806074256.784539
+stats:execQuery:1:0:5.01:0:20210812195246.279088
+stats:read:1:76471:0.89:1:20210812195247.533628
+stats:execQuery:2:0:50.50:0:20210812195338.072325
+stats:read:2:506814:52.68:1:20210812195433.103919
+stats:execQuery:3:0:17.17:0:20210812195450.322215
+stats:read:3:84190:1.01:1:20210812195451.759951
+stats:execQuery:4:0:1.68:0:20210812195453.486352
+stats:read:4:37313:2.62:1:20210812195456.287069
+stats:execQuery:5:0:49.37:0:20210812195545.703035
+stats:read:5:495488:39.39:1:20210812195627.396019
+stats:execQuery:6:0:99.56:0:20210812195806.999498
+stats:read:6:270910:28.50:1:20210812195836.750061
+stats:execQuery:7:0:117.56:0:20210812200034.351082
+stats:read:7:363375:43.49:1:20210812200119.527660
+stats:execQuery:8:0:54.38:0:20210812200213.956848
+stats:read:8:427245:46.25:1:20210812200302.197265
+stats:write:8:2261806:258.14:3:20210812200302.296291
+stats:totalTime:0:621.11:0:20210812200302.297175
 ```
 
 (colon is used as separator, because if you grep a bunch of files, you will get the file name as first column)
 fields:
+- type: execQuery is time of cursor.execute(), read is read, write is writes, totalTime is... well, total Time on this Log File.  
 - jobID (line number on jobs.csv file)
-- lines read or written
-- seconds: total seconds of read or write operations. on multi thread, it means you need to split per thread count.
+- rows read or written
+- seconds: total seconds of read or write operations. on multi thread, it is the sum of all threads.
 - thread count
 - timestamp
