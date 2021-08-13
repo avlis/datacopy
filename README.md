@@ -53,6 +53,8 @@ See sample-* files to have an idea of usage.
 
 - ignore_cols: a list of column names, separated by comma. only used it the query field does not have a select statement, just a table name.
 
+- pre_query_src, pre_query_dst: like query, but will run on source or destinations connections before other statements. for things like "set dateformat ymd", for instance...
+
 ## stats
 if you grep -E '^stats:' \*.log, you can get some info about lines read and wrote.
 
@@ -75,7 +77,7 @@ stats:read:7:363375:43.49:1:20210812200119.527660
 stats:execQuery:8:0:54.38:0:20210812200213.956848
 stats:read:8:427245:46.25:1:20210812200302.197265
 stats:write:8:2261806:258.14:3:20210812200302.296291
-stats:totalTime:0:621.11:0:20210812200302.297175
+stats:totalTime:0:0:621.11:0:20210812200302.297175
 ```
 
 (colon is used as separator, because if you grep a bunch of files, you will get the file name as first column)

@@ -157,7 +157,7 @@ def loadConnections(p_filename):
 
     g_connections = conns
 
-def initConnections(p_name, p_readOnly, p_qtd):
+def initConnections(p_name, p_readOnly, p_qtd, p_preQuery=''):
     global g_connections
     nc = {}
 
@@ -172,6 +172,7 @@ def initConnections(p_name, p_readOnly, p_qtd):
                 nc[x]=pyodbc.connect(driver="{ODBC Driver 17 for SQL Server}", server=c["server"], database=c["database"], user=c["user"], password=c["password"],encoding = "UTF-8", nencoding = "UTF-8", readOnly = p_readOnly )
         except (Exception, pyodbc.DatabaseError) as error:
             logPrint("initConnections({0}): DB error [{1}]".format(p_name,error))
+            g_ErrorOccurred.value=True
             closeLogFile(2)
 
     if c["driver"] == "cx_Oracle":
@@ -182,6 +183,7 @@ def initConnections(p_name, p_readOnly, p_qtd):
                 nc[x].outputtypehandler = cx_Oracle_OutputTypeHandler
         except (Exception) as error:
             logPrint("initConnections({0}): DB error [{1}]".format(p_name,error))
+            g_ErrorOccurred.value=True
             closeLogFile(2)
 
     if c["driver"] == "psycopg2":
@@ -194,6 +196,7 @@ def initConnections(p_name, p_readOnly, p_qtd):
                 nc[x].readonly = p_readOnly
         except (Exception) as error:
             logPrint("initConnections({0}): DB error [{1}]".format(p_name,error))
+            g_ErrorOccurred.value=True
             closeLogFile(2)
 
     if c["driver"] == "mysql":
@@ -203,6 +206,7 @@ def initConnections(p_name, p_readOnly, p_qtd):
                 nc[x]=mysql.connector.connect(host=c["server"], database=c["database"], user=c["user"], password = c["password"])
         except (Exception) as error:
             logPrint("initConnections({0}): DB error [{1}]".format(p_name,error))
+            g_ErrorOccurred.value=True
             closeLogFile(2)
 
     if c["driver"] == "mariadb":
@@ -212,6 +216,7 @@ def initConnections(p_name, p_readOnly, p_qtd):
                 nc[x]=mariadb.connect(host=c["server"], database=c["database"], user=c["user"], password = c["password"])
         except (Exception) as error:
             logPrint("initConnections({0}): DB error [{1}]".format(p_name,error))
+            g_ErrorOccurred.value=True
             closeLogFile(2)
 
     try:
@@ -225,7 +230,20 @@ def initConnections(p_name, p_readOnly, p_qtd):
         cur.close()
     except (Exception) as error:
         logPrint("initConnections({0}): error [{1}]".format(p_name, error))
+        g_ErrorOccurred.value=True
         closeLogFile(2)
+
+    if p_preQuery != '':
+        for i in nc:
+            pc = nc[i].cursor()
+            try:
+                logPrint("initConnections({0}): executing pre_query [{1}]".format(p_name, p_preQuery), L_DEBUG)
+                pc.execute(p_preQuery)
+            except (Exception) as error:
+                logPrint("initConnections({0}): error executing pre_query [{1}] [{2}]".format(p_name, p_preQuery, error))
+                g_ErrorOccurred.value=True
+                closeLogFile(2)  
+            pc.close()         
 
     return nc
 
@@ -291,6 +309,20 @@ def preCheck():
                 logPrint("ERROR: query file [{0}] does not exist! giving up.".format(query[1:]))
                 closeLogFile(4)
 
+        if "pre_query_src" in g_queries:
+            preQuerySrc = g_queries["pre_query_src"][i]
+            if preQuerySrc[0] == '@':
+                if not os.path.isfile(preQuerySrc[1:]):
+                    logPrint("ERROR: pre query file [{0}] does not exist! giving up.".format(preQuerySrc[1:]))
+                    closeLogFile(4)
+
+        if "pre_query_dst" in g_queries:
+            preQueryDst = g_queries["pre_query_dst"][i]
+            if preQueryDst[0] == '@':
+                if not os.path.isfile(preQueryDst[1:]):
+                    logPrint("ERROR: pre query file [{0}] does not exist! giving up.".format(preQueryDst[1:]))
+                    closeLogFile(4)
+
         if "regexes" in g_queries:
             regex = g_queries["regexes"][i]
             if regex[0] == '@':
@@ -328,6 +360,9 @@ def closeLogFile(p_exitCode = None):
         sys.exit(p_exitCode)
 
 def writeLogFile():
+
+    # WARNING: Log writing failures does not stop processing!
+
     global g_logStream
     global g_DEBUG
     global g_ErrorOccurred
@@ -380,12 +415,11 @@ def writeLogFile():
                 logFile = open( "{0}.running.log".format(sMsg), 'a')
             except (Exception) as error:
                 print('could not open log file [{0}]: [{1}]'.format(sMsg, error), file=sys.stderr, flush=True)
-                g_ErrorOccurred.value=True
             continue
 
         if logLevel == L_CLOSE:
             if logFile:
-                print("stats:totalTime:0:{0:.2f}:0:{1}".format(timer()-rStart, datetime.now().strftime('%Y%m%d%H%M%S.%f')), file=logFile, flush=True)
+                print("stats:totalTime:0:0:{0:.2f}:0:{1}".format(timer()-rStart, datetime.now().strftime('%Y%m%d%H%M%S.%f')), file=logFile, flush=True)
                 logFile.close()
                 logFile=None
                 if g_ErrorOccurred.value:
@@ -527,9 +561,25 @@ def prepQuery(p_index):
     dest = g_queries["dest"][p_index]
     mode = g_queries["mode"][p_index]
     query = g_queries["query"][p_index]
+    preQuerySrc = ''
+    preQueryDst = ''
+
+
     if query[0] == '@':
         with open(query[1:], 'r') as file:
             query = file.read()
+
+    if "pre_query_src" in g_queries:
+        preQuerySrc = g_queries["pre_query_src"][p_index]
+        if preQuerySrc[0]  == '@':
+            with open(preQuerySrc[1:], 'r') as file:
+                preQuerySrc = file.read()
+
+    if "pre_query_dst" in g_queries:
+        preQueryDst = g_queries["pre_query_dst"][p_index]
+        if preQueryDst[0]  == '@':
+            with open(preQueryDst[1:], 'r') as file:
+                preQueryDst = file.read()
 
     if "regexes" in g_queries:
         regexes = g_queries["regexes"][p_index]
@@ -547,6 +597,8 @@ def prepQuery(p_index):
             #result = re.sub(r"(\d.*?)\s(\d.*?)", r"\g<1> \g<2>", string1)
             if len(r) == 2:
                 query = re.sub( r[0], r[1], query )
+                preQuerySrc = re.sub( r[0], r[1], preQuerySrc )
+                preQueryDst = re.sub( r[0], r[1], preQueryDst )
 
     table = g_queries["table"][p_index]
 
@@ -577,7 +629,7 @@ def prepQuery(p_index):
         bCloseStream = True
 
     logPrint("\nprepQuery({0}): source=[{1}], dest=[{2}], table=[{3}] closeStream=[{4}]".format(qIndex, source, dest, table, bCloseStream), L_DEBUG)
-    return (source, dest, mode, query, table, fetchSize, nbrParallelWriters, bCloseStream)
+    return (source, dest, mode, preQuerySrc, preQueryDst, query, table, fetchSize, nbrParallelWriters, bCloseStream)
 
 def copyData():
     global g_Working
@@ -613,7 +665,7 @@ def copyData():
         prettyJobID = g_queries["index"][jobID]
 
         try:
-            (source, dest, mode, query, table, fetchSize, nbrParallelWriters, bCloseStream) = prepQuery(jobID)
+            (source, dest, mode, preQuerySrc, preQueryDst, query, table, fetchSize, nbrParallelWriters, bCloseStream) = prepQuery(jobID)
         except (Exception) as error:
             g_ErrorOccurred.value = True
             logPrint("copyData::OuterPrepQuery({0}): ERROR: [{1}]".format(prettyJobID, error))
@@ -621,7 +673,7 @@ def copyData():
         openLogFile(dest, table)
 
         try:
-            cGetConn[jobID] = initConnections(source, True, 1)[0]
+            cGetConn[jobID] = initConnections(source, True, 1, preQuerySrc)[0]
 
             sColNames = ''
             sColsPlaceholders = ''
@@ -719,7 +771,7 @@ def copyData():
             iRunningWriters = 0
             iTotalDataLinesWritten = 0
             iTotalWrittenSecs = .001
-            newWriteConns = initConnections(dest, False, nbrParallelWriters)
+            newWriteConns = initConnections(dest, False, nbrParallelWriters, preQueryDst)
 
             for x in range(nbrParallelWriters):
                 cPutConn[iWriters] = newWriteConns[x]
@@ -767,11 +819,11 @@ def copyData():
                                 jobID += 1
                                 prettyJobID = g_queries["index"][jobID]
                                 try:
-                                    (source, dest, mode, query, table, fetchSize, nbrParallelWriters, bCloseStream) = prepQuery(jobID)
+                                    (source, dest, mode, preQuerySrc, preQueryDst, query, table, fetchSize, nbrParallelWriters, bCloseStream) = prepQuery(jobID)
                                 except (Exception) as error:
                                     g_ErrorOccurred.value = True
                                     logPrint("copyData::InnerPrepQuery({0}): ERROR: [{1}]".format(prettyJobID, error))
-                                cGetConn[jobID] = initConnections(source, True, 1)[0]
+                                cGetConn[jobID] = initConnections(source, True, 1, preQuerySrc)[0]
                                 cGetData[jobID] = initCursor(cGetConn[jobID], jobID, fetchSize, True)
                                 logPrint("copyData({0}): starting reading from [{1}] to [{2}].[{3}], with query:\n***\n{4}\n***".format(prettyJobID, source, dest, table,query))
                                 g_readP[jobID]=mp.Process(target=readData, args = (prettyJobID, cGetConn[jobID], cGetData[jobID], fetchSize, query, bCloseStream, nbrParallelWriters))
@@ -833,7 +885,7 @@ def sig_handler(signum, frame):
 
     p = mp.current_process()
     if p.name == "MainProcess":
-        logPrint("\nsigHander: break received, signaling stop to threads...")
+        logPrint("sigHander: Error: break signal received, signaling stop to threads...")
         g_Working.value = False
         g_ErrorOccurred.value = True
 
@@ -843,7 +895,6 @@ def Main():
     global g_logFileName
 
     signal.signal(signal.SIGINT, sig_handler)
-    #signal.signal(signal.SIGTERM, sig_handler)
 
     if len(sys.argv) < 4:
         g_logFileName = os.getenv('LOG_FILE','')
