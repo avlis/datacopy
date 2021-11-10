@@ -79,6 +79,10 @@ g_writeP = {}
 queueSize = int(os.getenv('QUEUE_SIZE',256))
 g_usedQueueBeforeNew = int(queueSize/int(os.getenv('QUEUE_FB4NEWR',3)))
 
+g_readTunes = {}
+g_writeTunes = {}
+g_avgTunes = {}
+
 #### SHARED OBJECTS
 
 g_dataBuffer = mp.Manager().Queue(queueSize)
@@ -88,6 +92,13 @@ g_logStream = mp.Manager().Queue()
 g_seqnbr = mp.Value('i', 0)
 g_Working = mp.Value('b', True)
 g_ErrorOccurred =  mp.Value ('b',False)
+
+g_fetchSize = mp.Value('i', 1024)
+g_testPacketInterval = mp.Value('i', 8)
+g_autoTuneImproveFactor = 1.02
+g_autoTuneInterval = 256
+g_autoTuneStatsLiveCycles = 8
+
 
 
 #### other stuff
@@ -447,10 +458,19 @@ def readData(p_index, p_connection, p_cursor, p_fetchSize, p_query, p_closeStrea
 
     global g_seqnbr
 
+    global g_normalFetchSize
+    global g_testFetchSize
+    global g_testPacketInterval
+
+    testPacketSizes = ()
+    maxPacketSizeIndex = 0
+    testPacketSizeIndex = 0
+    fetchSize = 0
+
     if g_testQueries:
         logPrint("readData({0}): test queries only mode, exiting".format(p_index))
         g_dataBuffer.put( (g_seqnbr.value, D_EOD, None) )
-        g_eventStream.put((E_READ,p_index, False,float(0)))
+        g_eventStream.put( (E_READ, p_index, False, float(0), 0) )
         return
 
     logPrint("\nreadData({0}): Started".format(p_index), L_DEBUG)
@@ -463,11 +483,45 @@ def readData(p_index, p_connection, p_cursor, p_fetchSize, p_query, p_closeStrea
             logPrint("ReadData({0}): DB Error: [{1}]".format(p_index, error))
             g_ErrorOccurred.value = True
 
+    def updatePacketSizes():
+        nonlocal fetchSize
+        nonlocal testPacketSizes
+        nonlocal maxPacketSizeIndex
+        nonlocal testPacketSizeIndex
+        global g_fetchSize
+
+        fetchSize = g_fetchSize.value
+        testPacketSizes = ( 
+            int(fetchSize / 4), 
+            int(fetchSize / 2), 
+            int(fetchSize * 2), 
+            int(fetchSize * 4),
+            int(fetchSize * 8)
+        )
+        maxPacketSizeIndex = len(testPacketSizes)-1
+
+
     if not g_ErrorOccurred.value:
+        iTestPacketLoop = g_testPacketInterval.value 
+        updatePacketSizes()
+
         while g_Working.value:
+            iTestPacketLoop -= 1
+
+            #testing packets time?
+            if iTestPacketLoop <= 0:
+                if testPacketSizeIndex < maxPacketSizeIndex:
+                    fetchSize = testPacketSizes[testPacketSizeIndex]
+                    testPacketSizeIndex += 1
+                    #print("testing packet size:[{0}]".format(fetchSize), file=sys.stderr, flush=True)
+                else:
+                    updatePacketSizes()
+                    testPacketSizeIndex = 0
+                    iTestPacketLoop = g_testPacketInterval.value
+
             try:
                 rStart = timer()
-                bData = p_cursor.fetchmany(p_fetchSize)
+                bData = p_cursor.fetchmany(fetchSize)
             except (Exception) as error:
                 logPrint("ReadData({0}): DB Error: [{1}]".format(p_index, error))
                 g_ErrorOccurred.value = True
@@ -478,11 +532,12 @@ def readData(p_index, p_connection, p_cursor, p_fetchSize, p_query, p_closeStrea
             # not using p_cursor.rowcount because it is not consistent across drivers...
             iRowCount = len(bData)
             if iRowCount>0:
-                g_eventStream.put( (E_READ, p_index, iRowCount, (timer()-rStart)) )
+                g_eventStream.put( (E_READ, p_index, iRowCount, (timer()-rStart), g_seqnbr.value) )
 
             g_dataBuffer.put( (g_seqnbr.value, D_COD, bData), block = True )
             #logPrint("pushed g_seqnbr {0} (data)".format(g_seqnbr.value), L_DEBUG)
             g_seqnbr.value += 1
+
 
     if p_closeStream:
         logPrint("\nreadData({0}:{1}): signaling write threads of the end of data.".format(p_index,g_seqnbr.value), L_DEBUG)
@@ -502,7 +557,7 @@ def readData(p_index, p_connection, p_cursor, p_fetchSize, p_query, p_closeStrea
     except:
         None
 
-    g_eventStream.put((E_READ, p_index, False, float(0)))
+    g_eventStream.put( (E_READ, p_index, False, float(0), 0) )
     logPrint("\nreadData({0}): Ended".format(p_index), L_DEBUG)
 
 def writeData(p_index, p_connection, p_cursor, p_iQuery, p_thread):
@@ -516,37 +571,38 @@ def writeData(p_index, p_connection, p_cursor, p_iQuery, p_thread):
 
     FOD = 'X'
 
-    logPrint("\nwriteData({0}:{1}): Started".format(p_index, p_thread), L_DEBUG)
-    while g_Working.value:
+    if not g_ErrorOccurred.value:
+        logPrint("\nwriteData({0}:{1}): Started".format(p_index, p_thread), L_DEBUG)
+        while g_Working.value:
+            try:
+                seqnbr, FOD, bData = g_dataBuffer.get( block=True, timeout = 1 )
+                #logPrint("writer[{0}:{1}]: pulled g_seqnbr {2}, queue size {3}".format(p_index, p_thread , seqnbr, g_dataBuffer.qsize()), L_DEBUG)
+            except queue.Empty:
+                continue
+            if FOD == D_EOD:
+                logPrint("\nwriteData({0}:{1}:{2}): 'no more data' message received".format(p_index, p_thread, seqnbr), L_DEBUG)
+                break
+            try:
+                iStart = timer()
+                iResult  = p_cursor.executemany(p_iQuery, bData)
+                p_connection.commit()
+            except (Exception) as error:
+                logPrint("writeData({0}:{1}): DB Error: [{2}]".format(p_index, p_thread, error))
+                if not p_connection.closed:
+                    p_connection.rollback()
+                g_ErrorOccurred.value = True
+                break
+            g_eventStream.put( (E_WRITE, p_index, p_cursor.rowcount, (timer()-iStart), seqnbr) )
         try:
-            seqnbr, FOD, bData = g_dataBuffer.get( block=True, timeout = 1 )
-            #logPrint("writer[{0}:{1}]: pulled g_seqnbr {2}, queue size {3}".format(p_index, p_thread , seqnbr, g_dataBuffer.qsize()), L_DEBUG)
-        except queue.Empty:
-            continue
-        if FOD == D_EOD:
-            logPrint("\nwriteData({0}:{1}:{2}): 'no more data' message received".format(p_index, p_thread, seqnbr), L_DEBUG)
-            break
-        iStart = timer()
+            p_cursor.close()
+        except:
+            None
         try:
-            iResult  = p_cursor.executemany(p_iQuery, bData)
-            p_connection.commit()
-        except (Exception) as error:
-            logPrint("writeData({0}:{1}): DB Error: [{2}]".format(p_index, p_thread, error))
-            if not p_connection.closed:
-                p_connection.rollback()
-            g_ErrorOccurred.value = True
-            break
-        g_eventStream.put( (E_WRITE, p_index, p_cursor.rowcount, (timer()-iStart)) )
-    try:
-        p_cursor.close()
-    except:
-        None
-    try:
-        p_connection.close()
-    except:
-        None
-    g_eventStream.put( (E_WRITE, p_index, False, p_thread ) )
-    logPrint("\nwriteData({0}:{1}): Ended".format(p_index, p_thread), L_DEBUG)
+            p_connection.close()
+        except:
+            None
+        g_eventStream.put( (E_WRITE, p_index, False, p_thread, 0 ) )
+        logPrint("\nwriteData({0}:{1}): Ended".format(p_index, p_thread), L_DEBUG)
 
 def prepQuery(p_index):
     global g_queries
@@ -631,6 +687,106 @@ def prepQuery(p_index):
     logPrint("\nprepQuery({0}): source=[{1}], dest=[{2}], table=[{3}] closeStream=[{4}]".format(qIndex, source, dest, table, bCloseStream), L_DEBUG)
     return (source, dest, mode, preQuerySrc, preQueryDst, query, table, fetchSize, nbrParallelWriters, bCloseStream)
 
+def feedAutoTune(p_storeArray, p_recs, p_secs, p_seqnbr, p_autoTuneCycle):
+
+    newRPS = p_recs / p_secs
+    cnt = 1
+    try:
+        if p_recs in p_storeArray:
+            (cnt, curAvgSecs, curRPS, seqnbr, autoTuneCycle) = p_storeArray [p_recs]
+            newAvgSecs = (curAvgSecs + p_secs) / 2
+            newAvgRPS = (curRPS + newRPS) / 2
+            cnt += 1
+        else:
+            newAvgSecs = p_secs
+            newAvgRPS = newRPS
+        p_storeArray[p_recs] = (cnt, newAvgSecs, newAvgRPS, p_seqnbr, p_autoTuneCycle)
+    except (Exception) as error:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        print("feedAutoTune:{0}:{1}:{2}".format( error, exc_type, exc_tb.tb_lineno), file=sys.stderr, flush=True)
+
+def processAutoTune(p_prioritisedTunesStore, p_curSeqNbr, p_autoTuneCycle):
+    global L_INFO
+    global g_BiggerFetchSize
+    global g_normalFetchSize
+    global g_SmallerFetchSize
+
+    global g_readTunes
+    global g_writeTunes
+    global g_avgTunes
+
+    global g_testPacketSpreadFactor
+    global g_autoTuneImproveFactor
+    global g_autoTuneInterval
+    global g_autoTuneStatsLiveCycles
+
+    try:
+
+        def cleanOldStats(p_store):
+            delK=()
+            for k in p_store:
+                (cnt, curAvgSecs, curRPS, seqnbr, autoTuneCycle ) = p_store[k]
+                if autoTuneCycle < (p_autoTuneCycle - g_autoTuneStatsLiveCycles):
+                    delK += (k,)
+            for k in delK:
+                del p_store[k]
+
+        cleanOldStats(g_readTunes)
+        cleanOldStats(g_writeTunes)
+
+        g_avgTunes={}
+
+        for k in g_writeTunes:
+            if k in g_readTunes:
+                (cnt, curAvgSecs, curRPS, seqnbr, autoTuneCycle) = g_writeTunes[k]
+                (Rcnt, RcurAvgSecs, RcurRPS, Rseqnbr, RautoTuneCycle) = g_readTunes[k]
+                g_avgTunes[k] = ( (cnt+Rcnt), ((curAvgSecs+RcurAvgSecs)/2), ((curRPS+RcurRPS)/2), seqnbr, autoTuneCycle)
+
+        bestK = 0
+        bestRPS = 0
+
+        def getBestK(p_tunesStore, p_currentFS):
+            _bestK = 0
+            _bestRPS = 0
+            for k in p_tunesStore:
+                _curRPS = p_tunesStore[k][2]
+                if _curRPS > _bestRPS:
+                    _bestRPS = _curRPS
+                    _bestK = k
+            if p_currentFS in p_tunesStore:
+                _currentRPS =  p_tunesStore[p_currentFS][2]
+            else:
+                _currentRPS = 0
+            return( (_bestK, _bestRPS, _currentRPS) )
+
+        currentFS = g_fetchSize.value
+
+        if p_prioritisedTunesStore == 'w':
+            (bestK, bestRPS, currentRPS) = getBestK(g_writeTunes, currentFS)
+            print("writes: {0}".format(g_writeTunes), file=sys.stderr, flush=True)
+        elif p_prioritisedTunesStore == 'r':
+            (bestK, bestRPS, currentRPS) = getBestK(g_readTunes, currentFS)
+            print("reads: {0}".format(g_readTunes), file=sys.stderr, flush=True)
+        else:
+            (bestK, bestRPS, currentRPS) = getBestK(g_avgTunes, currentFS)
+            print("avg: {0}\n".format(g_avgTunes), file=sys.stderr, flush=True)
+
+        if currentRPS == 0:
+            print("why can't I get currentRPS for [{0}] on {1}?".format(currentFS, p_prioritisedTunesStore), file=sys.stderr, flush=True)
+            return
+
+        if bestRPS >  currentRPS * g_autoTuneImproveFactor and currentFS>32 and bestK<65537:
+            g_fetchSize.value = bestK
+
+            g_autoTuneInterval = int(1024 / (bestK / 256 ))
+            logPrint("changing fetchsize to [{0}]({1})".format(bestK, p_prioritisedTunesStore), L_INFO)
+            print("changing fetchsize to [{0}]({1})\n\n".format(bestK, p_prioritisedTunesStore), file=sys.stderr, flush=True)
+
+    except (Exception) as error:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        print("ProcessAutoTune:{0}:{1}:{2}".format( error, exc_type, exc_tb.tb_lineno), file=sys.stderr, flush=True)
+
+
 def copyData():
     global g_Working
     global g_defaultFetchSize
@@ -648,6 +804,10 @@ def copyData():
     global g_writeP
 
     global g_dataBuffer
+
+    global g_readTunes
+    global g_writeTunes
+    global g_avgTunes
 
     cPutConn = {}
     cPutData = {}
@@ -786,9 +946,11 @@ def copyData():
 
             logPrint("copyData({0}): entering insert loop...".format(prettyJobID))
 
+            iLoopsUntilAutoTune = g_autoTuneInterval
+            iAutoTuneCycle = 1
             while g_Working.value and (not g_ErrorOccurred.value) and iRunningWriters > 0:
                 try:
-                    eType, threadID, recs, secs = g_eventStream.get(block=True,timeout = 1)
+                    (eType, threadID, recs, secs, seqnbr) = g_eventStream.get(block=True,timeout = 1)
                     #logPrint("\nstreamevent: [{0},{1},{2},{3}]".format(eType,threadID, recs, secs), L_DEBUG)
 
                     if eType == E_READ:
@@ -803,6 +965,9 @@ def copyData():
                         else:
                             iTotalDataLinesRead += recs
                             iTotalReadSecs += secs
+
+                            feedAutoTune(g_readTunes, recs, secs, seqnbr, iAutoTuneCycle)
+
                     else: # E_WRITE
                         if not recs:
                             iRunningWriters -= 1
@@ -810,12 +975,15 @@ def copyData():
                             iTotalDataLinesWritten += recs
                             iTotalWrittenSecs += secs
 
+                            feedAutoTune(g_writeTunes, recs, secs, seqnbr, iAutoTuneCycle)
+                            iLoopsUntilAutoTune -= 1
+
                     if bWait4Buffers:
                         if g_dataBuffer.qsize()<g_usedQueueBeforeNew:
                             logPrint("buffers free, moving to next query", L_DEBUG)
                             bWait4Buffers = False
 
-                            if jobID<len(g_queries)-1:
+                            if jobID < len(g_queries)-1:
                                 jobID += 1
                                 prettyJobID = g_queries["index"][jobID]
                                 try:
@@ -840,11 +1008,27 @@ def copyData():
 
                 print("\r{0:,} records read ({1:.2f}/sec), {2:,} records written ({3:.2f}/sec), data queue len: {4}       ".format(iTotalDataLinesRead, (iTotalDataLinesRead/iTotalReadSecs), iTotalDataLinesWritten, (iTotalDataLinesWritten/iTotalWrittenSecs), g_dataBuffer.qsize()), file=sys.stdout, end='', flush = True)
                 
+                if iLoopsUntilAutoTune == 0:
+                    qsize = g_dataBuffer.qsize()
+
+                    if qsize < (nbrParallelWriters * 2):
+                        #optimise for reads
+                        useTunes='r'
+                    #elif qsize > g_usedQueueBeforeNew:
+                    #    useTunes = 'w'
+                    else:
+                    #    useTunes = 'a'
+                        useTunes = 'w'
+
+                    processAutoTune(useTunes, seqnbr, iAutoTuneCycle)
+                    iLoopsUntilAutoTune = g_autoTuneInterval
+                    iAutoTuneCycle += 1
+
             if g_ErrorOccurred.value:
                 #clean up any remaining data
                 while True:
                     try:
-                        dummy=g_dataBuffer.get(block = True, timeout = 1 )
+                        dummy=g_dataBuffer.get( block = True, timeout = 1 )
                     except queue.Empty:
                         break
                 for x in range(nbrParallelWriters):
@@ -855,14 +1039,13 @@ def copyData():
             statsPrint('write', prettyJobID, iTotalDataLinesWritten, iTotalWrittenSecs, nbrParallelWriters)
 
         except (Exception) as error:
+            exc_type, exc_obj, exc_tb = sys.exc_info()
             g_ErrorOccurred.value = True
-            logPrint("copyData({0}): ERROR: [{1}]".format(prettyJobID, error))
+            logPrint("copyData({0}): ERROR: [{1}] @{2}".format(prettyJobID, error, exc_tb.tb_lineno))
         finally:
             #if a control-c occurred, also rename file
             if mode == mode.upper() or not g_Working.value or (g_stopJobsOnError and g_ErrorOccurred.value):
                 closeLogFile()
- 
-                
                 
         if g_stopJobsOnError and g_ErrorOccurred.value:
             break
