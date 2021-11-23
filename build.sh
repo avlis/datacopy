@@ -5,10 +5,10 @@ if [ "$2" == "" ]; then
 else
         EXTRAVERSION="-${2}"
 fi
-docker rmi localhost/datacopy
-rm -f /dev/shm/datacopy.tgz
-docker build --squash -t datacopy:latest . && docker save datacopy${EXTRAVERSION}:latest -o /dev/shm/datacopy${EXTRAVERSION}.tgz 
+docker rmi localhost/datacopy${EXTRAVERSION}
+rm -f /dev/shm/datacopy${EXTRAVERSION}.tgz
+docker build --squash -t datacopy${EXTRAVERSION}:latest . && docker save datacopy${EXTRAVERSION}:latest -o /dev/shm/datacopy${EXTRAVERSION}.tgz 
 echo
 echo "DONE!"
 echo "now you can use:"
-echo  docker load < /dev/shm/datacopy${EXTRAVERSION}.tgz to update local images on other accounts."
+echo  "docker load < /dev/shm/datacopy${EXTRAVERSION}.tgz to update local images on other accounts."
