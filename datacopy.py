@@ -208,7 +208,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_preQuery:str = '',
         try:
             import pyodbc
             for x in range(p_qtd):
-                nc[x]=pyodbc.connect(driver="{ODBC Driver 17 for SQL Server}", server=c["server"], database=c["database"], user=c["user"], password=c["password"],encoding = "UTF-8", nencoding = "UTF-8", readOnly = p_readOnly )
+                nc[x]=pyodbc.connect(driver="{ODBC Driver 18 for SQL Server}", server=c["server"], database=c["database"], user=c["user"], password=c["password"],encoding = "UTF-8", nencoding = "UTF-8", readOnly = p_readOnly )
         except (Exception, pyodbc.DatabaseError) as error:
             logPrint("initConnections({0}): DB error [{1}]".format(p_name,error))
             g_ErrorOccurred.value=True
