@@ -7,8 +7,11 @@ else
 fi
 docker rmi localhost/datacopy${EXTRAVERSION}
 rm -f /dev/shm/datacopy${EXTRAVERSION}.tgz
-docker build --squash -t datacopy${EXTRAVERSION}:latest . && docker save datacopy${EXTRAVERSION}:latest -o /dev/shm/datacopy${EXTRAVERSION}.tgz 
-echo
-echo "DONE!"
-echo "now you can use:"
-echo  "docker load < /dev/shm/datacopy${EXTRAVERSION}.tgz to update local images on other accounts."
+if docker build --squash -t datacopy${EXTRAVERSION}:latest . && docker save datacopy${EXTRAVERSION}:latest -o /dev/shm/datacopy${EXTRAVERSION}.tgz; then
+        echo
+        echo "DONE!"
+        echo "now you can use:"
+        echo  "docker load < /dev/shm/datacopy${EXTRAVERSION}.tgz to update local images on other accounts."
+else
+        echo "build failed!"
+fi
