@@ -5,7 +5,7 @@ if [ "$2" == "" ]; then
 else
         EXTRAVERSION="-${2}"
 fi
-docker rmi localhost/datacopy${EXTRAVERSION}:latest
+docker rmi datacopy${EXTRAVERSION}:latest
 rm -f /dev/shm/datacopy${EXTRAVERSION}.tgz
 if docker build --squash -t datacopy${EXTRAVERSION}:latest . && docker save datacopy${EXTRAVERSION}:latest -o /dev/shm/datacopy${EXTRAVERSION}.tgz; then
         echo
