@@ -190,7 +190,11 @@ def loadConnections(p_filename:str):
                 sTSC = c["trustservercertificate"][i]
             else:
                 sTSC = "no"
-            nc = {"driver": c["driver"][i], "server": c["server"][i], "database":c["database"][i], "user":c["user"][i], "password":c["password"][i], "trustservercertificate": sTSC}
+            if "override_insert_placeholder" in c:
+                sIP = c["override_insert_placeholder"][i]
+            else:
+                sIP = "%s"
+            nc = {"driver": c["driver"][i], "server": c["server"][i], "database":c["database"][i], "user":c["user"][i], "password":c["password"][i], "trustservercertificate": sTSC, "insert_placeholder":sIP}
 
         conns[cName] = nc
 
@@ -931,10 +935,11 @@ def copyData():
                     tIgnoreCols = (g_queries["ignore_cols"][jobID]).split(',')
                 else:
                     tIgnoreCols = ()
+                sIP = getConnectionParameter(dest, "insert_placeholder")
                 for col in tdCursor.description:
                     if col[0] not in tIgnoreCols:
                         sColNames = '{0}"{1}",'.format(sColNames,col[0])
-                        sColsPlaceholders = sColsPlaceholders + "%s,"
+                        sColsPlaceholders = sColsPlaceholders + "{0},".format(sIP)
                 sColNames = sColNames[:-1]
                 sColsPlaceholders = sColsPlaceholders[:-1]
 
