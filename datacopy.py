@@ -186,7 +186,11 @@ def loadConnections(p_filename:str):
                 if ecol not in c:
                     logPrint("loadConnections[{0}]: Missing column on connections file: [{1}]".format(cName, ecol))
                     closeLogFile(1)
-            nc = {"driver": c["driver"][i], "server": c["server"][i], "database":c["database"][i], "user":c["user"][i], "password":c["password"][i]}
+            if "trustservercertificate" in c:
+                sTSC = c["trustservercertificate"][i]
+            else:
+                sTSC = "no"
+            nc = {"driver": c["driver"][i], "server": c["server"][i], "database":c["database"][i], "user":c["user"][i], "password":c["password"][i], "trustservercertificate": sTSC}
 
         conns[cName] = nc
 
@@ -208,7 +212,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_preQuery:str = '',
         try:
             import pyodbc
             for x in range(p_qtd):
-                nc[x]=pyodbc.connect(driver="{ODBC Driver 18 for SQL Server}", server=c["server"], database=c["database"], user=c["user"], password=c["password"],encoding = "UTF-8", nencoding = "UTF-8", readOnly = p_readOnly )
+                nc[x]=pyodbc.connect(driver="{ODBC Driver 18 for SQL Server}", server=c["server"], database=c["database"], user=c["user"], password=c["password"],encoding = "UTF-8", nencoding = "UTF-8", readOnly = p_readOnly, trustservercertificate = c["trustservercertificate"] )
         except (Exception, pyodbc.DatabaseError) as error:
             logPrint("initConnections({0}): DB error [{1}]".format(p_name,error))
             g_ErrorOccurred.value=True
