@@ -1083,6 +1083,8 @@ def copyData():
                                     isSelect = re.search('(^|[ \t\n]+)SELECT[ \t\n]+', newQuery.upper())
                                     if not isSelect:
                                         query="SELECT {0} FROM {1}".format(sColNames,newQuery)
+                                    else:
+                                        query = newQuery
                                 except Exception as error:
                                     g_ErrorOccurred.value = True
                                     logPrint("copyData::InnerPrepQuery({0}): ERROR: [{1}]".format(prettyJobID, error))
