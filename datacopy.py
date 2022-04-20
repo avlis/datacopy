@@ -1079,10 +1079,10 @@ def copyData():
                                 jobID += 1
                                 prettyJobID = g_queries["index"][jobID]
                                 try:
-                                    (source, dest, mode, preQuerySrc, preQueryDst, query, table, fetchSize, nbrParallelWriters, bCloseStream, bCSVEncodeSpecial) = prepQuery(jobID)
-                                    isSelect = re.search('(^|[ \t\n]+)SELECT[ \t\n]+', query.upper())
+                                    (source, dest, mode, preQuerySrc, preQueryDst, newQuery, table, fetchSize, nbrParallelWriters, bCloseStream, bCSVEncodeSpecial) = prepQuery(jobID)
+                                    isSelect = re.search('(^|[ \t\n]+)SELECT[ \t\n]+', newQuery.upper())
                                     if not isSelect:
-                                        query="SELECT {0} FROM {1}".format(sColNames,sSourceTableName)
+                                        query="SELECT {0} FROM {1}".format(sColNames,newQuery)
                                 except Exception as error:
                                     g_ErrorOccurred.value = True
                                     logPrint("copyData::InnerPrepQuery({0}): ERROR: [{1}]".format(prettyJobID, error))
