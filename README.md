@@ -17,7 +17,7 @@ the following env vars can be used to control it:
 - STOP_JOBS_ON_ERROR (default yes)
 - DUMPFILE_SEP (default | )
 - STATS_IN_JSON (default no)
-- DEBUG (default no, yes to get a lot of detaul on stderr, and a DUMP of the block that fails on writes)
+- DEBUG (default no, yes to get a lot of detail on stderr, and a DUMP of the block that fails on writes)
 
 See sample-* files to have an idea of usage.
 
