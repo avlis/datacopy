@@ -62,6 +62,8 @@ See sample-* files to have an idea of usage.
     this option will translate special chars (ascill < 32 to \0x string representation)
     this translation is always applied to DUMP files. 
 
+-- override_insert_placeholder: to override the default %s insert placeholder. Found that some azure stuff need a ? instead...
+
 ## stats
 a .stats file is created on the same folder as the log file. can be a csv (tab delimited) or in json format.
 
