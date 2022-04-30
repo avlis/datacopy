@@ -46,7 +46,7 @@ See sample-* files to have an idea of usage.
 
 - parallel_writers: how many processes are launched to process the queue and to write to database. default 1.
 
-- regexes: can be a placeholder/value, but if first char is @, reads placeolders values from a file, tab delimited
+- regexes: can be a placeholder/value, but if first char is @, reads placeolders values from a file, tab delimited. placeholders can be something like #DT_INI#, or anything easily searchable/replaceable on sql files. &&DT_INI is nice with oracle data sources, as the same sql statement will work on sql developer/sqlplus and will ask for replacement values.
 
 - insert_cols: can be a list of columns to build the insert statement (comma delimited), or:
     - @: build from source query column names (default option)
