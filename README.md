@@ -15,9 +15,12 @@ the following env vars can be used to control it:
 - REUSE_WRITERS: (default no)
 - QUEUE_FB4NEWR: default 3, means that the buffer can be only 1/3 full before starting the next reader, if reusing writers.
 - STOP_JOBS_ON_ERROR (default yes)
+- DUMP_ON_ERROR (default no)
 - DUMPFILE_SEP (default | )
 - STATS_IN_JSON (default no)
+- SCREEN_STATS (default yes)
 - DEBUG (default no, yes to get a lot of detail on stderr, and a DUMP of the block that fails on writes)
+- PARALLEL_READERS (default 1)
 
 See sample-* files to have an idea of usage.
 
@@ -52,9 +55,10 @@ See sample-* files to have an idea of usage.
     - @: build from source query column names (default option)
     - @l: build from source, lowering case
     - @u: build from source, upping case
+    - @d: build from destination
     - anything else: comma delimited list of column names.
 
-- ignore_cols: a list of column names, separated by comma. only used it the query field does not have a select statement, just a table name.
+- ignore_cols: a list of column names, separated by comma. 
 
 - pre_query_src, pre_query_dst: like query, but will run on source or destinations connections before other statements. for things like "set dateformat ymd", for instance...
 
