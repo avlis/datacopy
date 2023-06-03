@@ -58,6 +58,38 @@ def copyData():
         logging.openLogFile(dest, table)
         logging.logPrint(jobName, shared.L_STREAM_START)
 
+        if not shared.testQueries:
+            # cleaning up destination before inserts
+
+            if connections.getConnectionParameter(dest, 'driver') == 'csv':
+                if  mode.upper() in ('T','D'):
+                    sWriteFileMode='w'
+                    sCSVHeader = sColNamesNoQuotes
+                    logging.logPrint("copyData({0}): creating new CSV file(s)".format(jobName))
+                else:
+                    sWriteFileMode='a'
+                    sCSVHeader = ''
+                    logging.logPrint("copyData({0}): appending to existing CSV file(s)".format(jobName))
+            else:
+                if  mode.upper() in ('T','D'):
+                    cConn = connections.initConnections(dest, False, 1, '', table, 'w')[0]
+                    cCleanData = cConn.cursor()
+                    if mode.upper() == 'T':
+                        logging.logPrint("copyData({0}): cleaning up table (truncate) [{1}].[{2}]".format(jobName, dest,table))
+                        cStart = timer()
+                        cCleanData.execute("truncate table {0}".format(table))
+                        cConn.commit()
+                        logging.statsPrint('truncateTable', jobName, 0, timer() - cStart, 0)
+                    if mode.upper() == 'D':
+                        logging.logPrint("copyData({0}): cleaning up table (delete) [{1}].[{2}]".format(jobName, dest, table))
+                        cStart = timer()
+                        deletedRows=-1
+                        deletedRows=cCleanData.execute("delete from {0}".format(table))
+                        cConn.commit()
+                        logging.statsPrint('deleteTable', jobName, deletedRows, timer() - cStart, 0)
+                    cCleanData.close()
+                    cConn.close()
+
         if "insert_cols" in shared.queries:
             sOverrideCols = str(shared.queries["insert_cols"][jobID])
         else:
@@ -180,31 +212,6 @@ def copyData():
                                 logging.logPrint("copyData({0}): insert query (cols {1}): [{2}]".format(threadName, sIcolType, iQuery))
 
                             if not shared.testQueries:
-                                # cleaning up destination before inserts
-
-                                if connections.getConnectionParameter(dest, 'driver') == 'csv':
-                                    if  mode.upper() in ('T','D'):
-                                        sWriteFileMode='w'
-                                        sCSVHeader = sColNamesNoQuotes
-                                        logging.logPrint("copyData({0}): creating new CSV file(s)".format(threadName))
-                                    else:
-                                        sWriteFileMode='a'
-                                        sCSVHeader = ''
-                                        logging.logPrint("copyData({0}): appending to existing CSV file(s)".format(threadName))
-                                else:
-                                    cConn = connections.initConnections(dest, False, 1, '', table, 'w')[0]
-                                    cCleanData = cConn.cursor()
-                                    if mode.upper() == 'T':
-                                        logging.logPrint("copyData({0}): cleaning up table (truncate) [{1}].[{2}]".format(threadName, dest,table))
-                                        cCleanData.execute("truncate table {0}".format(table))
-                                    if mode.upper() == 'D':
-                                        logging.logPrint("copyData({0}): cleaning up table (delete) [{1}].[{2}]".format(threadName, dest, table))
-                                        cCleanData.execute("delete from {0}".format(table))
-                                    cConn.commit()
-                                    cCleanData.close()
-                                    cConn.close()
-
-
                                 logging.logPrint("copyData({0}): number of writers for this job: [{1}]".format(threadName, nbrParallelWriters))
 
                                 newWriteConns = connections.initConnections(dest, False, nbrParallelWriters, preQueryDst, table, sWriteFileMode)
