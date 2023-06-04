@@ -26,6 +26,7 @@ def readData(p_jobID:int, p_jobName:str, p_connection, p_cursor, p_fetchSize:int
 
     if not shared.ErrorOccurred.value:
         #first read outside the loop, to get the col description without penalising the loop with ifs
+        bData = False
         try:
             rStart = timer()
             bData = p_cursor.fetchmany(p_fetchSize)
@@ -44,6 +45,7 @@ def readData(p_jobID:int, p_jobName:str, p_connection, p_cursor, p_fetchSize:int
 
     if not shared.testQueries:
         while shared.Working.value and not shared.ErrorOccurred.value:
+            bData = False
             try:
                 rStart = timer()
                 bData = p_cursor.fetchmany(p_fetchSize)
@@ -85,6 +87,7 @@ def readData2(p_jobID:int, p_jobName:str, p_connection, p_connection2, p_cursor,
             shared.ErrorOccurred.value = True
 
     while shared.Working.value and not shared.ErrorOccurred.value:
+        bData = False
         try:
             rStart = timer()
             bData = p_cursor.fetchmany(p_fetchSize)
@@ -112,6 +115,7 @@ def readData2(p_jobID:int, p_jobName:str, p_connection, p_connection2, p_cursor,
                 shared.ErrorOccurred.value = True
 
             while shared.Working.value:
+                bData2 = False
                 try:
                     bData2 = p_cursor2.fetchmany(p_fetchSize)
                     if bColsNotSentYet:
