@@ -8,12 +8,23 @@ from datetime import datetime
 
 # Constants
 
-E_READ = 1
-E_WRITE = 2
-E_READ_START = 4+1
-E_WRITE_START = 4+2
-E_READ_END = 8+1
-E_WRITE_END = 8+2
+E_QUERY = 1
+E_READ = 2
+E_WRITE = 4
+
+E_BOOT = 8
+E_START = 16
+E_END = 32
+
+E_QUERY_START = E_QUERY + E_START
+E_QUERY_END = E_QUERY + E_END
+
+E_BOOT_READER = E_BOOT + E_READ
+E_READ_START = E_READ + E_START
+E_READ_END = E_READ + E_END
+
+E_WRITE_START = E_WRITE + E_START
+E_WRITE_END = E_WRITE + E_END
 
 L_INFO = 1
 L_DEBUG = 2
@@ -62,7 +73,7 @@ else:
     statsFormat = "{0}\t{1}\t{2}\t{3}\t{4}\t{5:.2f}\t{6}"
 
 parallelReaders = int(os.getenv('PARALLEL_READERS','1'))
-
+parallelReadersEventInterval = int(os.getenv('PARALLEL_READERS_EINT','3'))
 
 
 #### SHARED OBJECTS

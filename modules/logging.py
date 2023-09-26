@@ -17,7 +17,7 @@ import modules.shared as shared
 def logPrint(p_Message:str, p_logLevel:int=1):
     ''' sends message to the queue that manages logging'''
 
-    if p_logLevel  in (shared.L_INFO, shared.L_DEBUG):
+    if p_logLevel in (shared.L_INFO, shared.L_DEBUG):
         sMsg = "{0}: {1}".format(str(datetime.now()), p_Message)
     else:
         sMsg=p_Message

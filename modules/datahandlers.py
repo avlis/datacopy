@@ -17,8 +17,9 @@ def readData(p_jobID:int, p_jobName:str, p_connection, p_cursor, p_fetchSize:int
 
     if p_query:
         try:
+            shared.eventStream.put( (shared.E_QUERY_START, p_jobID, p_jobName, 0, 0) )
             p_cursor.execute(p_query)
-            logging.statsPrint('execQuery', p_jobName, 0, (timer() - tStart), 0)
+            shared.eventStream.put( (shared.E_QUERY_END, p_jobID, p_jobName, 0, (timer() - tStart)) )
         except Exception as error:
             logging.logPrint("readData({0}): DB Error at execute: [{1}], query=[{2}], conn=[{3}]".format(p_jobName, error, p_query, p_connection))
             logging.statsPrint('execError', p_jobName, 0, (timer() - tStart), 0)
@@ -79,8 +80,9 @@ def readData2(p_jobID:int, p_jobName:str, p_connection, p_connection2, p_cursor,
 
     if p_query:
         try:
+            shared.eventStream.put( (shared.E_QUERY_START, p_jobID, p_jobName, 0, 0) )
             p_cursor.execute(p_query)
-            logging.statsPrint('execQuery', p_jobName, 0, timer() - tStart, 0)
+            shared.eventStream.put( (shared.E_QUERY_END, p_jobID, p_jobName, 0, (timer() - tStart)) )
         except Exception as error:
             logging.logPrint("readData2({0}): DB Error at execute: [{1}], query=[{2}], conn=[{3}]".format(p_jobName, error, p_query, p_connection))
             logging.statsPrint('execError', p_jobName, 0, (timer() - tStart), 1)
@@ -108,7 +110,6 @@ def readData2(p_jobID:int, p_jobName:str, p_connection, p_connection2, p_cursor,
 
             try:
                 p_cursor2.execute(p_query2, keys)
-                #logging.statsPrint('execQuery', p_jobName, 0, timer() - tStart, 0)
             except Exception as error:
                 logging.logPrint("readData2({0}): DB Error at execute2: [{1}], query=[{2}], keys=[{3}], rowid=[{4}], conn=[{5}], conn2=[{6}]".format(p_jobName, error, p_query2, keys, rowid, p_connection, p_connection2))
                 logging.statsPrint('execError', p_jobName, 0, (timer() - tStart), 2)
