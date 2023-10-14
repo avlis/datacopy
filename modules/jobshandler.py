@@ -299,7 +299,7 @@ def copyData():
                     iParallelReadersEventIntervalCount -= 1
 
                 if shared.screenStats:
-                    print("\r{0:,} records read ({1:.2f}/sec x {2}), {3:,} records written ({4:.2f}/sec x {5}), data queue len: {6}       ".format(iTotalDataLinesRead, (iTotalDataLinesRead/iTotalReadSecs), iRunningReaders, iTotalDataLinesWritten, (iTotalDataLinesWritten/iTotalWrittenSecs), iRunningWriters, shared.dataBuffer.qsize()), file=sys.stdout, end='', flush = True) #pylint: disable=line-too-long
+                    print("\r{0:,} records read ({1:.2f}/sec x {2}r,{3}q), {4:,} records written ({5:.2f}/sec x {6}), data queue len: {7}       ".format(iTotalDataLinesRead, (iTotalDataLinesRead/iTotalReadSecs), iRunningReaders, iRunningQueries, iTotalDataLinesWritten, (iTotalDataLinesWritten/iTotalWrittenSecs), iRunningWriters, shared.dataBuffer.qsize()), file=sys.stdout, end='', flush = True) #pylint: disable=line-too-long
 
             if shared.ErrorOccurred.value:
                 #clean up any remaining data
