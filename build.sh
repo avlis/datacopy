@@ -1,17 +1,25 @@
 #!/bin/bash
 [ "$1" == "pull" ] && git pull
+
 if [ "$2" == "" ]; then
-        EXTRAVERSION=""
+	EXTRAVERSION=""
 else
-        EXTRAVERSION="-${2}"
+	EXTRAVERSION="-${2}"
+fi
+
+if [ -z "${SKIPBASE}" ]; then
+	docker rm dcexport 2>&1 >/dev/null
+	docker rmi datacopy${EXTRAVERSION}:build datacopy${EXTRAVERSION}:flat
+	if 	docker build -t datacopy${EXTRAVERSION}:build -f Dockerfile.build . && \
+		docker run --name dcexport datacopy${EXTRAVERSION}:build /bin/true && \
+		docker export dcexport | docker import - datacopy${EXTRAVERSION}:flat ; then
+		docker rm dcexport 2>&1 >/dev/null
+		echo
+		echo "base done!"
+	else
+		echo
+		echo "build BASE failed!"
+	fi
 fi
 docker rmi datacopy${EXTRAVERSION}:latest
-rm -f /dev/shm/datacopy${EXTRAVERSION}.tgz
-if docker build --squash -t datacopy${EXTRAVERSION}:latest . && docker save datacopy${EXTRAVERSION}:latest -o /dev/shm/datacopy${EXTRAVERSION}.tgz; then
-        echo
-        echo "DONE!"
-        echo "now you can use:"
-        echo  "docker load < /dev/shm/datacopy${EXTRAVERSION}.tgz to update local images on other accounts."
-else
-        echo "build failed!"
-fi
+docker build -t datacopy${EXTRAVERSION}:latest -f Dockerfile .
