@@ -19,6 +19,7 @@ if [ -z "${SKIPBASE}" ]; then
 	else
 		echo
 		echo "build BASE failed!"
+		exit 1
 	fi
 fi
 docker rmi datacopy${EXTRAVERSION}:latest
