@@ -1,8 +1,8 @@
 FROM python:3-slim
 ENV LD_LIBRARY_PATH=/opt/instantclient_21_11
 WORKDIR /app
-RUN apt-get update && apt-get -y dist-upgrade && apt-get -y install curl bash nano screen htop iftop tcpdump net-tools gnupg less iputils-ping unzip
-RUN curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && curl https://packages.microsoft.com/config/debian/11/prod.list > /etc/apt/sources.list.d/mssql-release.list && echo 'Package: *\nPin: origin packages.microsoft.com\nPin-Priority: 1\n' > /etc/apt/preferences.d/microsoft.pref
+RUN apt-get update && apt-get -y dist-upgrade && apt-get -y install curl bash nano screen htop iftop tcpdump net-tools gnupg less iputils-ping unzip gpg
+RUN curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg && curl https://packages.microsoft.com/config/debian/12/prod.list > /etc/apt/sources.list.d/mssql-release.list && echo 'Package: *\nPin: origin packages.microsoft.com\nPin-Priority: 1\n' > /etc/apt/preferences.d/microsoft.pref
 RUN cd /opt && curl https://download.oracle.com/otn_software/linux/instantclient/2111000/instantclient-basiclite-linux.x64-21.11.0.0.0dbru.zip > /dev/shm/oic.zip && unzip /dev/shm/oic.zip && rm -f /dev/shm/oic.zip
 RUN curl https://downloads.mariadb.com/MariaDB/mariadb_repo_setup > /tmp/ms.sh && chmod +x /tmp/ms.sh && /tmp/ms.sh && rm -f /tmp/ms.sh
 RUN apt-get update && ACCEPT_EULA=Y apt-get -y install msodbcsql18 mssql-tools18 mariadb-client postgresql-client g++ unixodbc-dev python3-dev libpq-dev libaio1 libmariadb3 libmariadb-dev
