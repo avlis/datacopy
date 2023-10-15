@@ -2,7 +2,7 @@
 # note all args are passed to first build, practical for --build-arg HTTP_PROXY=...
 
 if [ ! -z "${EXTRAVERSION}" ]; then
-	EXTRAVERSION="-${2}"
+	EXTRAVERSION="-${EXTRAVERSION}"
 fi
 
 if [ -z "${SKIPBASE}" ]; then
