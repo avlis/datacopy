@@ -66,12 +66,11 @@ def copyData():
 
             if connections.getConnectionParameter(dest, 'driver') == 'csv':
                 if  mode.upper() in ('T','D'):
-                    sWriteFileMode='w'
-                    sCSVHeader = sColNamesNoQuotes
+                    sWriteFileMode='w'                 
                     logging.logPrint("copyData({0}): creating new CSV file(s)".format(jobName))
                 else:
                     sWriteFileMode='a'
-                    sCSVHeader = ''
+                    
                     logging.logPrint("copyData({0}): appending to existing CSV file(s)".format(jobName))
             else:
                 if  mode.upper() in ('T','D'):
@@ -234,11 +233,16 @@ def copyData():
                                 iQuery = "INSERT INTO {0}({1}) VALUES ({2})".format(table,sColNames,sColsPlaceholders)
                                 sIcolType = "from source"
 
-                            sColNamesNoQuotes = sColNames.replace('"','')
+                            sColNamesNoQuotes = sColNames.replace('"','')                      
 
                             logging.logPrint(sColNamesNoQuotes.split(','), shared.L_DUMPCOLS)
                             if connections.getConnectionParameter(dest, 'driver') == 'csv':
                                 logging.logPrint("copyData({0}): cols for CSV file(s): [{1}]".format(threadName, sColNamesNoQuotes))
+                                if  mode.upper() in ('T','D'):
+                                    sCSVHeader = sColNamesNoQuotes
+                                else:
+                                    sCSVHeader = ''
+                                
                             else:
                                 logging.logPrint("copyData({0}): insert query (cols {1}): [{2}]".format(threadName, sIcolType, iQuery))
 
