@@ -77,8 +77,6 @@ def Main():
     logProcessor=mp.Process(target=logging.writeLogFile)
     logProcessor.start()
 
-    logging.logPrint('datacopy version [{0}] starting'.format(os.getenv('VERSION','<unkown>')))
-
     connections.loadConnections(c_filename)
     jobs.loadJobs(q_filename)
 

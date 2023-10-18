@@ -3,6 +3,7 @@
 #pylint: disable=invalid-name,broad-except
 
 import sys
+import os
 import re
 from timeit import default_timer as timer
 import multiprocessing as mp
@@ -60,6 +61,7 @@ def copyData():
         jobName = '{0}-{1}-{2}-{3}'.format(shared.queries["index"][jobID], source, dest, table)
         logging.openLogFile(dest, table)
         logging.logPrint(jobName, shared.L_STREAM_START)
+        logging.logPrint('datacopy version [{0}] starting'.format(os.getenv('VERSION','<unkown>')))
 
         if not shared.testQueries:
             # cleaning up destination before inserts
