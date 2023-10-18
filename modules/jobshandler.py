@@ -286,7 +286,6 @@ def copyData():
 #shared.E_WRITE_END
                     elif eType == shared.E_WRITE_END:
                         iRunningWriters -= 1
-                        shared.writeP[threadID].join(1)
 
                 except queue.Empty:
                     pass
