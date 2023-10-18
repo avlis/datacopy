@@ -8,6 +8,7 @@ import queue
 import modules.shared as shared
 import modules.logging as logging
 
+import setproctitle
 
 def readData(p_jobID:int, p_jobName:str, p_connection, p_cursor, p_fetchSize:int, p_query:str):
     '''gets data from sources'''
@@ -17,6 +18,7 @@ def readData(p_jobID:int, p_jobName:str, p_connection, p_cursor, p_fetchSize:int
 
     if p_query:
         try:
+            setproctitle.setproctitle(f'datacopy: readData(query) [{p_jobName}]')
             shared.eventStream.put( (shared.E_QUERY_START, p_jobID, p_jobName, 0, 0) )
             p_cursor.execute(p_query)
             shared.eventStream.put( (shared.E_QUERY_END, p_jobID, p_jobName, 0, (timer() - tStart)) )
@@ -25,6 +27,7 @@ def readData(p_jobID:int, p_jobName:str, p_connection, p_cursor, p_fetchSize:int
             logging.statsPrint('execError', p_jobName, 0, (timer() - tStart), 0)
             shared.ErrorOccurred.value = True
 
+    setproctitle.setproctitle(f'datacopy: readData [{p_jobName}]')
     if not shared.ErrorOccurred.value:
         #first read outside the loop, to get the col description without penalising the loop with ifs
         bData = False
@@ -80,6 +83,7 @@ def readData2(p_jobID:int, p_jobName:str, p_connection, p_connection2, p_cursor,
 
     if p_query:
         try:
+            setproctitle.setproctitle(f'datacopy: readData2(query) [{p_jobName}]')
             shared.eventStream.put( (shared.E_QUERY_START, p_jobID, p_jobName, 0, 0) )
             p_cursor.execute(p_query)
             shared.eventStream.put( (shared.E_QUERY_END, p_jobID, p_jobName, 0, (timer() - tStart)) )
@@ -88,6 +92,7 @@ def readData2(p_jobID:int, p_jobName:str, p_connection, p_connection2, p_cursor,
             logging.statsPrint('execError', p_jobName, 0, (timer() - tStart), 1)
             shared.ErrorOccurred.value = True
 
+    setproctitle.setproctitle(f'datacopy: readData2 [{p_jobName}]')
     while shared.Working.value and not shared.ErrorOccurred.value:
         bData = False
         try:
@@ -158,6 +163,8 @@ def writeData(p_jobID:int, p_jobName:str, p_thread:int, p_connection, p_cursor, 
     seqnbr = -1
     FOD = 'X'
 
+    setproctitle.setproctitle(f'datacopy: writeData [{p_jobName}]')
+
     logging.logPrint("\nwriteData({0}:{1}): Started".format(p_jobName, p_thread), shared.L_DEBUG)
     shared.eventStream.put( (shared.E_WRITE_START, p_jobID, p_jobName, None, None) )
     while shared.Working.value and not shared.ErrorOccurred.value:
@@ -199,6 +206,8 @@ def writeData(p_jobID:int, p_jobName:str, p_thread:int, p_connection, p_cursor, 
 
 def writeDataCSV(p_jobID:int, p_jobName:str, p_thread:int, p_stream, p_Header:str, p_encodeSpecial:bool = False):
     '''write data to csv file'''
+
+    setproctitle.setproctitle(f'datacopy: writeDataCSV [{p_jobName}]')
 
     seqnbr = -1
     FOD = 'X'

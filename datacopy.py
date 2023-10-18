@@ -30,6 +30,7 @@ or by ENV var:
 import sys
 import os
 import signal
+import setproctitle
 
 import multiprocessing as mp
 mp.set_start_method('fork')
@@ -70,6 +71,8 @@ def Main():
         c_filename = os.getenv('CONNECTIONS_FILE','connections.csv')
     else:
         c_filename = sys.argv[1]
+
+    setproctitle.setproctitle(f'datacopy: main thread [{q_filename}]')
 
     logProcessor=mp.Process(target=logging.writeLogFile)
     logProcessor.start()

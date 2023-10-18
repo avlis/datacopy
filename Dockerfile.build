@@ -1,4 +1,7 @@
 FROM python:3-slim
+ARG version="build-20231018-001"
+LABEL version=${version}
+ENV VERSION=${version}
 ENV LD_LIBRARY_PATH=/opt/instantclient_21_11
 WORKDIR /app
 RUN apt-get update && apt-get -y dist-upgrade && apt-get -y install curl bash nano screen htop iftop tcpdump net-tools gnupg less iputils-ping unzip gpg

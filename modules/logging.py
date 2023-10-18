@@ -10,6 +10,7 @@ import multiprocessing as mp
 import signal
 import queue
 import csv
+import setproctitle
 
 import modules.shared as shared
 
@@ -65,6 +66,9 @@ def writeLogFile():
 
     #ignore control-c on this thread
     signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+    setproctitle.setproctitle(f'datacopy: log writer')
+
 
     logFile = None
     statsFile = None

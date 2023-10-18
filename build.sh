@@ -5,7 +5,7 @@ if [ ! -z "${EXTRAVERSION}" ]; then
 	EXTRAVERSION="-${EXTRAVERSION}"
 fi
 
-if [ -z "${SKIPBASE}" ]; then
+if [ -z "${SKIPBUILD}" ]; then
 	docker rm dcexport 2>&1 >/dev/null
 	docker rmi datacopy${EXTRAVERSION}:build datacopy${EXTRAVERSION}:flat
 	if 	docker build -t datacopy${EXTRAVERSION}:build -f Dockerfile.build $* . && \
@@ -21,4 +21,7 @@ if [ -z "${SKIPBASE}" ]; then
 	fi
 fi
 docker rmi datacopy${EXTRAVERSION}:latest
-docker build -t datacopy${EXTRAVERSION}:latest -f Dockerfile .
+if [ ! -z "${EXTRAVERSION}" ]; then
+	BARGS="--build-arg EXTRAVERSION=${EXTRAVERSION}"
+fi
+docker build -t datacopy${EXTRAVERSION}:latest -f Dockerfile . ${BARGS}

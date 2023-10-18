@@ -270,6 +270,7 @@ def copyData():
                     elif eType == shared.E_READ_END:
                         iRunningReaders -= 1
                         logging.statsPrint('readDataEnd', threadName, iDataLinesRead[threadID], iReadSecs[threadID], iRunningReaders)
+                        shared.readP[threadID].join(1)
 
                         if iRunningReaders == 0 and bCloseStream:
                             logging.logPrint("copyData({0}): signaling the end of data for this stream.".format(threadName))
@@ -283,6 +284,7 @@ def copyData():
 #shared.E_WRITE_END
                     elif eType == shared.E_WRITE_END:
                         iRunningWriters -= 1
+                        shared.writeP[threadID].join(1)
 
                 except queue.Empty:
                     pass
