@@ -1,6 +1,6 @@
 ARG EXTRAVERSION
 FROM datacopy${EXTRAVERSION}:flat
-ARG version="20231018-004"
+ARG version="20231103-001"
 LABEL version=${version}
 ENV VERSION=${version}
 ENV LD_LIBRARY_PATH=/opt/instantclient_21_11

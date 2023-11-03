@@ -158,7 +158,8 @@ def prepQuery(p_index):
         for regex in regexes:
             r = regex.split('\t')
             #result = re.sub(r"(\d.*?)\s(\d.*?)", r"\g<1> \g<2>", string1)
-            if len(r) == 2:
+            if len(r) >= 2:
+                logging.logPrint(f"prepQuery({0}): replacing [{1}] with [{2}] on queries".format(qIndex, r[0], r[1]))
                 query = re.sub( r[0], r[1], query )
                 query2 = re.sub( r[0], r[1], query2 )
                 preQuerySrc = re.sub( r[0], r[1], preQuerySrc )

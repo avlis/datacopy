@@ -1,5 +1,5 @@
 FROM python:3-slim
-ARG version="build-20231018-001"
+ARG version="build-20231103-001"
 LABEL version=${version}
 ENV VERSION=${version}
 ENV LD_LIBRARY_PATH=/opt/instantclient_21_11
