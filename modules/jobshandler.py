@@ -1,6 +1,6 @@
 '''job sequencer control'''
 
-#pylint: disable=invalid-name,broad-except
+#pylint: disable=invalid-name, broad-except, line-too-long
 
 import sys
 import os
@@ -23,7 +23,7 @@ def copyData():
     iRunningReaders = 0
     iRunningQueries = 0
 
-    iParallelReadersEventIntervalCount = shared.parallelReadersEventInterval
+    tParallelReadersNextCheck = timer() + shared.parallelReadersLaunchInterval
 
     jobID = 0
 
@@ -42,90 +42,118 @@ def copyData():
 
     iReadSecs = {}
 
-    logging.logPrint("copyData: entering jobs loop, max readers allowed: [{0}]".format(shared.parallelReaders))
+    logging.logPrint(f'copyData: entering jobs loop, max readers allowed: [{shared.parallelReaders}]')
 
     while jobID < len(shared.queries) and shared.Working.value and not shared.ErrorOccurred.value:
-        logging.logPrint("entering jobID {0}".format(jobID), shared.L_DEBUG)
+        logging.logPrint(f'entering jobID {jobID}', shared.L_DEBUG)
 
         iDataLinesRead[jobID] = 0
         iReadSecs[jobID] = .001
 
         writersNotStartedYet = True
 
+        oMaxAlreadyInsertedData = None
+
         try:
-            (source, source2, dest, mode, preQuerySrc, preQueryDst, query, query2, table, fetchSize, nbrParallelWriters, bCloseStream, bCSVEncodeSpecial) = jobs.prepQuery(jobID)
+            (source, source2, dest, mode, preQuerySrc, preQueryDst, query, query2, table, fetchSize, nbrParallelWriters, bCloseStream, bCSVEncodeSpecial, appendKeyColumn, getMaxQuery, getMaxDest) = jobs.prepQuery(jobID)
         except Exception as error:
             shared.ErrorOccurred.value = True
-            logging.logPrint("copyData::OuterPrepQuery({0}): ERROR: [{1}]".format(shared.queries["index"][jobID], error))
+            logging.logPrint(f"copyData::OuterPrepQuery({shared.queries['index'][jobID]}): ERROR: [{error}]")
 
-        jobName = '{0}-{1}-{2}-{3}'.format(shared.queries["index"][jobID], source, dest, table)
+        jobName = f"{shared.queries['index'][jobID]}-{source}-{dest}-{table}"
         logging.openLogFile(dest, table)
         logging.logPrint(jobName, shared.L_STREAM_START)
-        logging.logPrint('datacopy version [{0}] starting'.format(os.getenv('VERSION','<unkown>')))
+        logging.logPrint(f"datacopy version [{os.getenv('VERSION','<unkown>')}] starting")
 
         if not shared.testQueries:
             # cleaning up destination before inserts
 
             if connections.getConnectionParameter(dest, 'driver') == 'csv':
                 if  mode.upper() in ('T','D'):
-                    sWriteFileMode='w'                 
-                    logging.logPrint("copyData({0}): creating new CSV file(s)".format(jobName))
+                    sWriteFileMode='w'
+                    logging.logPrint(f'copyData({jobName}): creating new CSV file(s)')
                 else:
                     sWriteFileMode='a'
-                    
-                    logging.logPrint("copyData({0}): appending to existing CSV file(s)".format(jobName))
+
+                    logging.logPrint(f'copyData({jobName}): appending to existing CSV file(s)')
             else:
+                siObjSep = connections.getConnectionParameter(dest, 'insert_object_delimiter')
                 if  mode.upper() in ('T','D'):
                     cConn = connections.initConnections(dest, False, 1, '', table, 'w')[0]
                     cCleanData = cConn.cursor()
                     if mode.upper() == 'T':
-                        logging.logPrint("copyData({0}): cleaning up table (truncate) [{1}].[{2}]".format(jobName, dest,table))
+                        logging.logPrint(f'copyData({jobName}): cleaning up table (truncate) [{dest}].[{table}]')
                         cStart = timer()
                         try:
                             logging.statsPrint('truncateStart', jobName, 0, 0, 0)
-                            cCleanData.execute("truncate table {0}".format(table))
+                            cCleanData.execute(f'truncate table {siObjSep}{table}{siObjSep}')
                             cConn.commit()
                             logging.statsPrint('truncateEnd', jobName, 0, timer() - cStart, 0)
                         except Exception as error:
-                            logging.logPrint("copyData({0}): ERROR truncating table: [{1}]".format(jobName, error))
+                            logging.logPrint(f'copyData({jobName}): ERROR truncating table: [{error}]')
                             logging.statsPrint('truncateError', jobName, 0, timer() - cStart, 0)
                             shared.ErrorOccurred.value=True
                             logging.closeLogFile(5)
                     if mode.upper() == 'D':
-                        logging.logPrint("copyData({0}): cleaning up table (delete) [{1}].[{2}]".format(jobName, dest, table))
+                        logging.logPrint(f'copyData({jobName}): cleaning up table (delete) [{dest}].[{table}]')
                         cStart = timer()
                         deletedRows=-1
                         try:
                             logging.statsPrint('deleteStart', jobName, 0, 0, 0)
-                            deletedRows=cCleanData.execute("delete from {0}".format(table))
+                            deletedRows=cCleanData.execute(f'delete from {siObjSep}{table}{siObjSep}')
                             cConn.commit()
                             logging.statsPrint('deleteEnd', jobName, deletedRows, timer() - cStart, 0)
                         except Exception as error:
-                            logging.logPrint("copyData({0}): ERROR deleting table: [{1}]".format(jobName, error))
+                            logging.logPrint(f'copyData({jobName}): ERROR deleting table: [{error}]')
                             logging.statsPrint('deleteError', jobName, 0, timer() - cStart, 0)
                             shared.ErrorOccurred.value=True
                             logging.closeLogFile(5)
                     cCleanData.close()
                     cConn.close()
+                if  mode.upper() == 'A':
 
-        if "insert_cols" in shared.queries:
-            sOverrideCols = str(shared.queries["insert_cols"][jobID])
+                    if getMaxDest == '':
+                        getMaxDest = dest
+
+                    cConn = connections.initConnections(getMaxDest, False, 1, '', table, 'w')[0]
+                    cGetMaxID = cConn.cursor()
+
+                    logging.logPrint(f'copyData({jobName}): figuring out max value for [{appendKeyColumn}] on [{getMaxDest}] with [{getMaxQuery}]')
+                    cStart = timer()
+                    try:
+                        logging.statsPrint('getMaxAtDestinationStart', jobName, 0, 0, 0)
+                        cGetMaxID.execute(getMaxQuery)
+                        oMaxAlreadyInsertedData = cGetMaxID.fetchone()[0]
+
+                        logging.statsPrint('getMaxAtDestinationEnd', jobName, 0, timer() - cStart, oMaxAlreadyInsertedData)
+                        logging.logPrint(f'copyData({jobName}): max value  is [{oMaxAlreadyInsertedData}]')
+                    except Exception as error:
+                        logging.logPrint(f'copyData({jobName}): ERROR getting max value: [{error}]')
+                        logging.statsPrint('getMaxAtDestinationError', jobName, 0, timer() - cStart, 0)
+                        shared.ErrorOccurred.value=True
+                        logging.closeLogFile(5)
+
+                    cGetMaxID.close()
+                    cConn.close()
+
+        if 'insert_cols' in shared.queries:
+            sOverrideCols = str(shared.queries['insert_cols'][jobID])
         else:
             sOverrideCols = ''
 
-        if "ignore_cols" in shared.queries:
-            tIgnoreCols = (shared.queries["ignore_cols"][jobID]).split(',')
+        if 'ignore_cols' in shared.queries:
+            tIgnoreCols = (shared.queries['ignore_cols'][jobID]).split(',')
         else:
             tIgnoreCols = ()
 
         try:
-            logging.logPrint("copyData({0}): entering insert loop...".format(jobName))
+            logging.logPrint(f'copyData({jobName}): entering insert loop...')
             shared.eventStream.put( (shared.E_BOOT_READER, jobID, jobName, 0, 0 ) )
 
             while ( shared.Working.value and not shared.ErrorOccurred.value and ( iRunningWriters > 0 or iRunningReaders > 0 or shared.eventStream.qsize() > 0 ) ):
                 try:
                     eType, threadID, threadName, recs, secs = shared.eventStream.get(block = True, timeout = 1) # pylint: disable=unused-variable
-                    #logging.logPrint("\nstreamevent: [{0},{1},{2},{3}]".format(eType,threadID, recs, secs), shared.L_DEBUG)
+                    #logging.logPrint('\nstreamevent: [{0},{1},{2},{3}]'.format(eType,threadID, recs, secs), shared.L_DEBUG)
 
 #shared.E_READ
                     if eType == shared.E_READ:
@@ -144,24 +172,39 @@ def copyData():
                         iReadSecs[threadID] = .001
 
                         try:
-                            (source, source2, dest, mode, preQuerySrc, preQueryDst, query, query2, table, fetchSize, nbrParallelWritersIgnored, bCloseStream, bCSVEncodeSpecial) = jobs.prepQuery(threadID) #pylint: disable=unused-variable
+                            (source, source2, dest, mode, preQuerySrc, preQueryDst, query, query2, table, fetchSize, nbrParallelWritersIgnored, bCloseStream, bCSVEncodeSpecial, appendKeyColumn, getMaxQuery, getMaxDest) = jobs.prepQuery(threadID) #pylint: disable=unused-variable
                         except Exception as error:
                             shared.ErrorOccurred.value = True
-                            logging.logPrint("copyData::InnerPrepQuery({0}): ERROR: [{1}]".format(shared.queries["index"][threadID], error))
+                            logging.logPrint(f"copyData::InnerPrepQuery({shared.queries['index'][threadID]}): ERROR: [{error}]")
 
-                        jobName = '{0}-{1}-{2}-{3}'.format(shared.queries["index"][threadID], source, dest, table)
+                        jobName = f"{shared.queries['index'][threadID]}-{source}-{dest}-{table}"
+
                         isSelect = re.search('(^|[ \t\n]+)SELECT[ \t\n]+', query.upper())
-                        if not isSelect:
-                            query="SELECT * FROM {0}".format(query)
+                        siObjSep = connections.getConnectionParameter(source, 'insert_object_delimiter')
+
+                        if mode.upper() == 'A' and oMaxAlreadyInsertedData:
+                            if shared.identify_type(oMaxAlreadyInsertedData) in ('integer', 'float'):
+                                sMaxAlreadyInsertedData = f'{oMaxAlreadyInsertedData}'
+                            else:
+                                sMaxAlreadyInsertedData = f"'{oMaxAlreadyInsertedData}'"
+
+                            if isSelect:
+                                query = re.sub('#MAX_KEY_VALUE#', sMaxAlreadyInsertedData, query)
+                            else:
+                                query = f'SELECT * FROM {siObjSep}{query}{siObjSep} WHERE {siObjSep}{appendKeyColumn}{siObjSep} > {sMaxAlreadyInsertedData}'
+                        else:
+                            if not isSelect:
+                                # it means query is just a table name, expand to select
+                                query = f'SELECT * FROM {siObjSep}{query}{siObjSep}'
 
                         shared.GetConn[threadID] = connections.initConnections(source, True, 1, preQuerySrc)[0]
                         shared.GetData[threadID] = connections.initCursor(shared.GetConn[threadID], threadID, fetchSize)
                         if source2 != '':
                             shared.GetConn2[threadID] = connections.initConnections(source2, True, 1)[0]
                             shared.GetData2[threadID] = connections.initCursor(shared.GetConn2[threadID], threadID, fetchSize)
-                        logging.logPrint("copyData({0}): starting reading from [{1}] to [{2}].[{3}], with query:\n***\n{4}\n***".format(jobName, source, dest, table,query))
+                        logging.logPrint(f'copyData({jobName}): starting reading from [{source}] to [{dest}].[{table}], with query:\n***\n{query}\n***')
                         if query2 != '':
-                            logging.logPrint("copyData({0}): and from [{1}] with query:\n***\n{2}\n***".format(jobName, source2, query2))
+                            logging.logPrint(f'copyData({jobName}): and from [{source2}] with query:\n***\n{query2}\n***')
                             shared.readP[threadID]=mp.Process(target=datahandlers.readData2, args = (threadID, jobName, shared.GetConn[threadID], shared.GetConn2[threadID], shared.GetData[threadID], shared.GetData2[threadID], fetchSize, query, query2))
                         else:
                             shared.readP[threadID]=mp.Process(target=datahandlers.readData, args = (threadID, jobName, shared.GetConn[threadID], shared.GetData[threadID], fetchSize, query))
@@ -181,14 +224,14 @@ def copyData():
 #shared.E_READ_START
                     elif eType == shared.E_READ_START:
 
-                        logging.logPrint("copyData({0}): received read start message".format(threadName), shared.L_DEBUG)
+                        logging.logPrint(f'copyData({threadName}): received read start message', shared.L_DEBUG)
                         logging.statsPrint('readDataStart', threadName, 0, 0, iRunningReaders)
 
                         if writersNotStartedYet:
                             iRunningWriters = 0
                             iTotalDataLinesWritten = 0
                             iTotalWrittenSecs = .001                            # only start writers after a sucessful read
-                            logging.logPrint("copyData({0}): writersNotStartedYet, processing cols to prepare insert statement: [{1}]".format(threadName, recs), shared.L_DEBUG)
+                            logging.logPrint(f'copyData({threadName}): writersNotStartedYet, processing cols to prepare insert statement: [{recs}]', shared.L_DEBUG)
                             sColNames = ''
                             sColsPlaceholders = ''
 
@@ -200,7 +243,8 @@ def copyData():
                                 # from destination:
                                 cConn = connections.initConnections(dest, False, 1, '', table, 'r')[0]
                                 tdCursor = cConn.cursor()
-                                tdCursor.execute("SELECT * FROM {0} WHERE 1=0".format(table))
+                                siObjSep = connections.getConnectionParameter(dest, 'insert_object_delimiter')
+                                tdCursor.execute(f'SELECT * FROM {siObjSep}{query}{siObjSep}  WHERE 1=0')
                                 workingCols = tdCursor.description
                                 cConn.rollback() #somehow, this select blocks truncates on postgres, if not rolled back?...
                                 tdCursor.close()
@@ -209,47 +253,48 @@ def copyData():
                                 for col in sOverrideCols.split(','):
                                     workingCols.append( (col,'dummy') )
 
-                            sIP = connections.getConnectionParameter(dest, "insert_placeholder")
+                            sIP = connections.getConnectionParameter(dest, 'insert_placeholder')
+                            siObjSep = connections.getConnectionParameter(dest, 'insert_object_delimiter')
+
                             for col in workingCols:
                                 if col[0] not in tIgnoreCols:
-                                    sColNames = '{0}"{1}",'.format(sColNames, col[0])
-                                    sColsPlaceholders = sColsPlaceholders + "{0},".format(sIP)
+                                    sColNames = f'{sColNames}{siObjSep}{col[0]}{siObjSep},'
+                                    sColsPlaceholders = f'{sColsPlaceholders}{sIP},'
                             sColNames = sColNames[:-1]
                             sColsPlaceholders = sColsPlaceholders[:-1]
 
                             iQuery = ''
-
                             if sOverrideCols == '@d':
-                                iQuery = "INSERT INTO {0}({1}) VALUES ({2})".format(table,sColNames,sColsPlaceholders)
-                                sIcolType = "from destination"
+                                iQuery = f'INSERT INTO {siObjSep}{table}{siObjSep}({sColNames}) VALUES ({sColsPlaceholders})'
+                                sIcolType = 'from destination'
                             elif sOverrideCols == '@l':
-                                iQuery = "INSERT INTO {0}({1}) VALUES ({2})".format(table,sColNames.lower(),sColsPlaceholders)
-                                sIcolType = "from source, lowercase"
+                                iQuery = f'INSERT INTO {siObjSep}{table}{siObjSep}({sColNames.lower()}) VALUES ({sColsPlaceholders})'
+                                sIcolType = 'from source, lowercase'
                             elif sOverrideCols == '@u':
-                                iQuery = "INSERT INTO {0}({1}) VALUES ({2})".format(table,sColNames.upper(),sColsPlaceholders)
-                                sIcolType = "from source, upercase"
+                                iQuery = f'INSERT INTO {siObjSep}{table}{siObjSep}({sColNames.upper()}) VALUES ({sColsPlaceholders})'
+                                sIcolType = 'from source, upercase'
                             elif len(sOverrideCols)>0 and sOverrideCols[0] != '@':
-                                iQuery = "INSERT INTO {0}({1}) VALUES ({2})".format(table,sOverrideCols,sColsPlaceholders)
-                                sIcolType = "overridden"
+                                iQuery = f'INSERT INTO {siObjSep}{table}{siObjSep}({sOverrideCols}) VALUES ({sColsPlaceholders})'
+                                sIcolType = 'overridden'
                             else:
-                                iQuery = "INSERT INTO {0}({1}) VALUES ({2})".format(table,sColNames,sColsPlaceholders)
-                                sIcolType = "from source"
+                                iQuery = f'INSERT INTO {siObjSep}{table}{siObjSep}({sColNames}) VALUES ({sColsPlaceholders})'
+                                sIcolType = 'from source'
 
-                            sColNamesNoQuotes = sColNames.replace('"','')                      
+                            sColNamesNoQuotes = sColNames.replace(f'{siObjSep}','')
 
                             logging.logPrint(sColNamesNoQuotes.split(','), shared.L_DUMPCOLS)
                             if connections.getConnectionParameter(dest, 'driver') == 'csv':
-                                logging.logPrint("copyData({0}): cols for CSV file(s): [{1}]".format(threadName, sColNamesNoQuotes))
+                                logging.logPrint(f'copyData({threadName}): cols for CSV file(s): [{sColNamesNoQuotes}]')
                                 if  mode.upper() in ('T','D'):
                                     sCSVHeader = sColNamesNoQuotes
                                 else:
                                     sCSVHeader = ''
-                                
+
                             else:
-                                logging.logPrint("copyData({0}): insert query (cols {1}): [{2}]".format(threadName, sIcolType, iQuery))
+                                logging.logPrint(f'copyData({threadName}): insert query (cols {sIcolType}): [{iQuery}]')
 
                             if not shared.testQueries:
-                                logging.logPrint("copyData({0}): number of writers for this job: [{1}]".format(threadName, nbrParallelWriters))
+                                logging.logPrint(f'copyData({threadName}): number of writers for this job: [{nbrParallelWriters}]')
 
                                 newWriteConns = connections.initConnections(dest, False, nbrParallelWriters, preQueryDst, table, sWriteFileMode)
 
@@ -275,10 +320,10 @@ def copyData():
                         shared.readP[threadID].join(1)
 
                         if iRunningReaders == 0 and bCloseStream:
-                            logging.logPrint("copyData({0}): signaling the end of data for this stream.".format(threadName))
+                            logging.logPrint(f'copyData({threadName}): signaling the end of data for this stream.')
                             for x in range(nbrParallelWriters):
                                 shared.dataBuffer.put( (shared.seqnbr.value, shared.D_EOD, None), block = True )
-                                #print("pushed shared.seqnbr {0} (end)".format(shared.seqnbr.value), file=sys.stderr, flush = True)
+                                #print('pushed shared.seqnbr {0} (end)'.format(shared.seqnbr.value), file=sys.stderr, flush = True)
                                 shared.seqnbr.value += 1
 #shared.E_WRITE_START
                     elif eType == shared.E_WRITE_START:
@@ -291,22 +336,20 @@ def copyData():
                     pass
 
 #common part of event processing:
-                if iParallelReadersEventIntervalCount == 0:
-                    iParallelReadersEventIntervalCount = shared.parallelReadersEventInterval
+                if tParallelReadersNextCheck < timer():
+                    tParallelReadersNextCheck = timer() + shared.parallelReadersLaunchInterval
                     if  not bEndOfJobs and not bCloseStream and iRunningReaders < shared.parallelReaders and shared.dataBuffer.qsize()<shared.usedQueueBeforeNew:
                         if jobID<len(shared.queries)-1:
                             jobID += 1
-                            jobName = '{0}-{1}-{2}-{3}'.format(shared.queries["index"][jobID], shared.queries["source"][jobID], shared.queries["dest"][jobID], shared.queries["table"][jobID])
+                            jobName = f"{shared.queries['index'][jobID]}-{shared.queries['source'][jobID]}-{shared.queries['dest'][jobID]}-{shared.queries['table'][jobID]}"
                             shared.eventStream.put( (shared.E_BOOT_READER, jobID, jobName, 0, 0 ) )
                         else:
-                            logging.logPrint("no more jobs, stopping launches", shared.L_DEBUG)
+                            logging.logPrint('no more jobs, stopping launches', shared.L_DEBUG)
                             jobID += 1
                             bEndOfJobs = True
-                else:
-                    iParallelReadersEventIntervalCount -= 1
 
                 if shared.screenStats:
-                    print("\r{0:,} records read ({1:.2f}/sec x {2}r,{3}q), {4:,} records written ({5:.2f}/sec x {6}), data queue len: {7}       ".format(iTotalDataLinesRead, (iTotalDataLinesRead/iTotalReadSecs), iRunningReaders, iRunningQueries, iTotalDataLinesWritten, (iTotalDataLinesWritten/iTotalWrittenSecs), iRunningWriters, shared.dataBuffer.qsize()), file=sys.stdout, end='', flush = True) #pylint: disable=line-too-long
+                    print(f'\r{iTotalDataLinesRead:,} records read ({(iTotalDataLinesRead/iTotalReadSecs):,.2f}/sec x {iRunningReaders}r,{iRunningQueries}q), {iTotalDataLinesWritten:,} records written ({(iTotalDataLinesWritten/iTotalWrittenSecs):,.2f}/sec x {iRunningWriters}), data queue len: {shared.dataBuffer.qsize():,}       ', file=sys.stdout, end='', flush = True)
 
             if shared.ErrorOccurred.value:
                 #clean up any remaining data
@@ -318,14 +361,14 @@ def copyData():
                 for x in range(nbrParallelWriters):
                     shared.dataBuffer.put( (-3, shared.D_EOD, None) )
 
-            print("\n", file=sys.stdout, flush = True)
-            logging.logPrint("copyData({0}): {1:,} rows copied in {2:.2f} seconds ({3:.2f}/sec).".format(jobName, iTotalDataLinesWritten, iTotalWrittenSecs, (iTotalDataLinesWritten/iTotalWrittenSecs)))
+            print('\n', file=sys.stdout, flush = True)
+            logging.logPrint(f'copyData({jobName}): {iTotalDataLinesWritten:,} rows copied in {iTotalWrittenSecs:,.2f} seconds ({(iTotalDataLinesWritten/iTotalWrittenSecs):,.2f}/sec).')
             logging.statsPrint('writeDataEnd', jobName, iTotalDataLinesWritten, iTotalWrittenSecs, nbrParallelWriters)
             logging.logPrint(jobName, shared.L_STREAM_END)
 
         except Exception as error:
             shared.ErrorOccurred.value = True
-            logging.logPrint("copyData: ERROR at line ({1}): [{0}]".format(error, sys.exc_info()[2].tb_lineno))
+            logging.logPrint(f'copyData: ERROR at line ({sys.exc_info()[2].tb_lineno}): [{error}]')
             logging.statsPrint('ERROR', jobName, 0, 0, 0)
         finally:
             #if a control-c occurred, also rename file
@@ -339,6 +382,7 @@ def copyData():
 
         jobID += 1
 
+    #pylint: disable=consider-using-dict-items
     for i in shared.readP:
         shared.readP[i].terminate()
     for i in shared.writeP:

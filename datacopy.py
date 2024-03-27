@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# pylint: disable=invalid-name,wrong-import-position
+# pylint: disable=invalid-name, wrong-import-position, line-too-long
 
-"""
+'''
 script to copy loads of data between databases
 - reads by default connections.csv and jobs.csv
 - parameters on command line:
@@ -25,15 +25,16 @@ or by ENV var:
     -- STATS_IN_JSON (default no)
     -- PARALLEL_READERS (default 1)
 
-"""
+'''
 
 import sys
 import os
 import signal
-import setproctitle
 
 import multiprocessing as mp
 mp.set_start_method('fork')
+
+import setproctitle
 
 import modules.shared as shared
 import modules.logging as logging
@@ -45,9 +46,9 @@ def sig_handler(signum, frame):
     '''handles signals'''
 
     p = mp.current_process()
-    if p.name == "MainProcess":
+    if p.name == 'MainProcess':
         logging.statsPrint('ERROR', 'CONTROL-C', 0, 0, 0)
-        logging.logPrint("sigHander: Error: break signal received ({0},{1}), signaling stop to threads...".format(signum, frame))
+        logging.logPrint(f'sigHander: Error: break signal received ({signum},{frame}), signaling stop to threads...')
         shared.ErrorOccurred.value = True
         shared.Working.value = False
 
@@ -82,7 +83,7 @@ def Main():
 
     jobs.preCheck()
     jobshandler.copyData()
-    print ("exited copydata!")
+    print ('exited copydata!')
     if shared.ErrorOccurred.value:
         logging.closeLogFile(6)
 

@@ -1,6 +1,6 @@
 '''global shared objecs and constants'''
 
-#pylint: disable=invalid-name
+#pylint: disable=invalid-name, line-too-long
 
 import os
 import multiprocessing as mp
@@ -70,10 +70,10 @@ executionID:str = os.getenv('EXECUTION_ID',datetime.now().strftime('%Y%m%d%H%M%S
 if os.getenv('STATS_IN_JSON','no') == 'yes':
     statsFormat = '{{"dc.ts":"{0}","dc.execID":"{1}","dc.event":"{2}","dc.jobID":"{3}","dc.recs":{4},"dc.secs":{5:.2f},"dc.threads":{6}}}'
 else:
-    statsFormat = "{0}\t{1}\t{2}\t{3}\t{4}\t{5:.2f}\t{6}"
+    statsFormat = '{0}\t{1}\t{2}\t{3}\t{4}\t{5:.2f}\t{6}'
 
 parallelReaders = int(os.getenv('PARALLEL_READERS','1'))
-parallelReadersEventInterval = int(os.getenv('PARALLEL_READERS_EINT','3'))
+parallelReadersLaunchInterval = int(os.getenv('PARALLEL_READERS_LAUNCH_INTERVAL','3'))
 
 
 #### SHARED OBJECTS
@@ -106,7 +106,7 @@ def encodeSpecialChars(p_in):
                 for b in col:
                     i=ord(b)
                     if i<32:
-                        newData.append(r'\{0}'.format(hex(i)))
+                        newData.append(r'\{hex(i)}')
                     else:
                         newData.append(b)
                 newLine.append(''.join(newData))
@@ -114,3 +114,25 @@ def encodeSpecialChars(p_in):
                 newLine.append(col)
         buff.append(tuple(newLine))
     return tuple(buff)
+
+
+def identify_type(obj):
+    '''Identifies the type of an object as integer, float, date, or string.
+
+    Args:
+        obj: The object to identify the type of.
+
+    Returns:
+        A string indicating the type of the object.
+    '''
+    t = type(obj)
+    if t == int:
+        return 'integer'
+    elif t == float:
+        return 'float'
+    elif str(t).startswith("<class 'datetime."):  # Replace with your date library if needed
+        return 'date'
+    elif t == str:
+        return 'string'
+    else:
+        return 'unknown'

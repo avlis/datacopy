@@ -21,6 +21,8 @@ the following env vars can be used to control it:
 - SCREEN_STATS (default yes)
 - DEBUG (default no, yes to get a lot of detail on stderr, and a DUMP of the block that fails on writes)
 - PARALLEL_READERS (default 1)
+- PARALLEL_READERS_LAUNCH_INTERVAL (default 3 seconds), can be used to override that behaviour
+- ADD_NAMES_DELIMITERS (default no, yes to add double quotes or backtiks on table and column names)
 
 See sample-* files to have an idea of usage.
 
@@ -33,13 +35,14 @@ See sample-* files to have an idea of usage.
     - caps mean close log file after this one
     - t means truncate, d delete before inserting
     - i means just insert.
+    - a means after, gets a max value from destination to ajust the source query. see append_column and append_query for more details. 
     examples: 
         - T means truncate, insert data, and close log file. 
         - t means truncate, insert, leave log file open for next query
         - i just inserts, leave log file open for next query
         - I insert and close log file.
 
-- query: can be a "select * from...", but if first char is @, means a file path to read a query from. or it can be just a table name, and it will build automatically a SELECT "[col1]","[col2]",(..)"[colN]" from [table].
+- query: can be a "select * from...", but if first char is @, means a file path to read the query from. or it can be just a table name, and it will build automatically a SELECT "[col1]","[col2]",(..)"[colN]" from [table].
 - table: destination table name.
 
 
@@ -55,7 +58,7 @@ See sample-* files to have an idea of usage.
     - @: build from source query column names (default option)
     - @l: build from source, lowering case
     - @u: build from source, upping case
-    - @d: build from destination
+    - @d: build from destination (cannot be used if destination is csv)
     - anything else: comma delimited list of column names.
 
 - ignore_cols: a list of column names, separated by comma. 
@@ -68,35 +71,52 @@ See sample-* files to have an idea of usage.
 
 -- override_insert_placeholder: to override the default %s insert placeholder. Found that some azure stuff need a ? instead...
 
+-- append_column: on mode A, with just table names on source and destination: will do a select max(col) on destination, and will change the source query to select * from source where col > max_from_dest; if the source is a custom query, the max_from_dest value will be available to be replaced with the placeholder #MAX_KEY_VALUE#.
+
+-- append_query: if for some reason, the value to be used as a bigger than filter needs a more complicated filter (or comes from a different table), you can customize the select statement. it should return only one row and one column. same rules as query applies: it can be a query on the jobs file, or it can be prefixed with an @ to point to a file.
+-- append_source: if for some reason it needs to come from a connection that is not the destination, it can be overriden with this column.
+
 ## stats
 a .stats file is created on the same folder as the log file. can be a csv (tab delimited) or in json format.
 
-example (csv with 8 jobs, with REUSE_WRITERS=yes):
+example:
 ```
-20210812195246.279088	execQuery	1	0	5.01	0
-20210812195247.533628	read	1	76471	0.89	1
-20210812195338.072325	execQuery	2	0	50.50	0
-20210812195433.103919	read	2	506814	52.68	1
-20210812195450.322215	execQuery	3	0	17.17	0
-20210812195451.759951	read	3	84190	1.01	1
-20210812195453.486352	execQuery	4	0	1.68	0
-20210812195456.287069	read	4	37313	2.62	1
-20210812195545.703035	execQuery	5	0	49.37	0
-20210812195627.396019	read	5	495488	39.39	1
-20210812195806.999498	execQuery	6	0	99.56	0
-20210812195836.750061	read	6	270910	28.50	1
-20210812200034.351082	execQuery	7	0	117.56	0
-20210812200119.527660	read	7	363375	43.49	1
-20210812200213.956848	execQuery	8	0	54.38	0
-20210812200302.197265	read	8	427245	46.25	1
-20210812200302.296291	write	8	2261806	258.14	3
-20210812200302.297175	totalTime	0	0	621.11	0
+20240325100048.850060	exec_id_1	streamStart	1-o_more-d_more-kernelhistory	0	0.00	1
+20240325100049.013253	exec_id_1	getMaxAtDestinationStart	1-o_more-d_more-kernelhistory	0	0.00	0
+20240325100049.013883	exec_id_1	getMaxAtDestinationEnd	1-o_more-d_more-kernelhistory	0	0.00	288343539
+20240325100049.069554	exec_id_1	execQueryStart	1-o_more-d_more-kernelhistory	0	0.00	1
+20240325100049.072864	exec_id_1	execQueryEnd	1-o_more-d_more-kernelhistory	0	0.00	0
+20240325100049.074555	exec_id_1	readDataStart	1-o_more-d_more-kernelhistory	0	0.00	1
+20240325100049.206110	exec_id_1	writeDataStart	1-o_more-d_more-kernelhistory	0	0.00	1
+20240325100049.210558	exec_id_1	writeDataStart	1-o_more-d_more-kernelhistory	0	0.00	2
+20240325100049.215625	exec_id_1	writeDataStart	1-o_more-d_more-kernelhistory	0	0.00	3
+20240325100049.216968	exec_id_1	readDataEnd	1-o_more-d_more-kernelhistory	397	0.00	0
+20240325100049.234455	exec_id_1	writeDataEnd	1-o_more-d_more-kernelhistory	397	0.02	3
+20240325100049.235270	exec_id_1	streamEnd	1-o_more-d_more-kernelhistory	0	0.39	0
 ```
+
+or json mode:
+```
+{"dc.ts":"20240325100128.392068","dc.execID":"exec_id_2","dc.event":"streamStart","dc.jobID":"1-o_more-d_more-kernelhistory","dc.recs":0,"dc.secs":0.00,"dc.threads":1}
+{"dc.ts":"20240325100128.548502","dc.execID":"exec_id_2","dc.event":"getMaxAtDestinationStart","dc.jobID":"1-o_more-d_more-kernelhistory","dc.recs":0,"dc.secs":0.00,"dc.threads":0}
+{"dc.ts":"20240325100128.549177","dc.execID":"exec_id_2","dc.event":"getMaxAtDestinationEnd","dc.jobID":"1-o_more-d_more-kernelhistory","dc.recs":0,"dc.secs":0.00,"dc.threads":288343936}
+{"dc.ts":"20240325100128.613191","dc.execID":"exec_id_2","dc.event":"execQueryStart","dc.jobID":"1-o_more-d_more-kernelhistory","dc.recs":0,"dc.secs":0.00,"dc.threads":1}
+{"dc.ts":"20240325100128.615363","dc.execID":"exec_id_2","dc.event":"execQueryEnd","dc.jobID":"1-o_more-d_more-kernelhistory","dc.recs":0,"dc.secs":0.00,"dc.threads":0}
+{"dc.ts":"20240325100128.615964","dc.execID":"exec_id_2","dc.event":"readDataStart","dc.jobID":"1-o_more-d_more-kernelhistory","dc.recs":0,"dc.secs":0.00,"dc.threads":1}
+{"dc.ts":"20240325100128.745757","dc.execID":"exec_id_2","dc.event":"writeDataStart","dc.jobID":"1-o_more-d_more-kernelhistory","dc.recs":0,"dc.secs":0.00,"dc.threads":1}
+{"dc.ts":"20240325100128.750171","dc.execID":"exec_id_2","dc.event":"writeDataStart","dc.jobID":"1-o_more-d_more-kernelhistory","dc.recs":0,"dc.secs":0.00,"dc.threads":2}
+{"dc.ts":"20240325100128.754842","dc.execID":"exec_id_2","dc.event":"writeDataStart","dc.jobID":"1-o_more-d_more-kernelhistory","dc.recs":0,"dc.secs":0.00,"dc.threads":3}
+{"dc.ts":"20240325100128.756119","dc.execID":"exec_id_2","dc.event":"readDataEnd","dc.jobID":"1-o_more-d_more-kernelhistory","dc.recs":36,"dc.secs":0.00,"dc.threads":0}
+{"dc.ts":"20240325100128.765983","dc.execID":"exec_id_2","dc.event":"writeDataEnd","dc.jobID":"1-o_more-d_more-kernelhistory","dc.recs":36,"dc.secs":0.01,"dc.threads":3}
+{"dc.ts":"20240325100128.766758","dc.execID":"exec_id_2","dc.event":"streamEnd","dc.jobID":"1-o_more-d_more-kernelhistory","dc.recs":0,"dc.secs":0.37,"dc.threads":0}
+```
+
 
 fields:
 - timestamp
+- execution ID
 - type: execQuery is time of cursor.execute(), read is read, write is writes, totalTime is... well, total Time on this Log File.  
-- jobID (line number on jobs.csv file)
+- jobID (concat of line number, source, destination, destination table name, from jobs.csv file)
 - rows read or written
 - seconds: total seconds of read or write operations. on multi thread, it is the sum of all threads.
 - thread count

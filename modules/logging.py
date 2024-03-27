@@ -1,6 +1,6 @@
 '''log and stats stuff'''
 
-#pylint: disable=invalid-name,broad-except
+#pylint: disable=invalid-name, broad-except, line-too-long
 import os
 import sys
 from datetime import datetime
@@ -19,7 +19,7 @@ def logPrint(p_Message:str, p_logLevel:int=1):
     ''' sends message to the queue that manages logging'''
 
     if p_logLevel in (shared.L_INFO, shared.L_DEBUG):
-        sMsg = "{0}: {1}".format(str(datetime.now()), p_Message)
+        sMsg = f'{str(datetime.now())}: {p_Message}'
     else:
         sMsg=p_Message
     shared.logStream.put((p_logLevel, sMsg))
@@ -36,9 +36,9 @@ def openLogFile(p_dest:str, p_table:str):
 
     sLogFilePrefix = ''
     if shared.logFileName == '':
-        sLogFilePrefix = "{0}.{1}".format(p_dest, p_table)
+        sLogFilePrefix = f'{p_dest}.{p_table}'
     else:
-        sLogFilePrefix = "{0}".format(shared.logFileName)
+        sLogFilePrefix = f'{shared.logFileName}'
 
     shared.logStream.put( (shared.L_OPEN, sLogFilePrefix) )
 
@@ -67,7 +67,7 @@ def writeLogFile():
     #ignore control-c on this thread
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
-    setproctitle.setproctitle(f'datacopy: log writer')
+    setproctitle.setproctitle('datacopy: log writer')
 
 
     logFile = None
@@ -85,7 +85,7 @@ def writeLogFile():
         except Exception:
             continue
 
-        #print("logwriter: received message [{0}][{1}]".format(logLevel, sMsg), file=sys.stderr, flush=True)
+        #print(f'logwriter: received message [{logLevel}][{sMsg}]', file=sys.stderr, flush=True)
         if logLevel == shared.L_INFO:
             print(sMsg, file=sys.stdout, flush=True)
             if logFile:
@@ -114,7 +114,7 @@ def writeLogFile():
         if logLevel == shared.L_DUMPDATA:
             if shared.DEBUG or shared.DUMP_ON_ERROR:
                 try:
-                    dumpFile = open( "{0}.DUMP".format(sLogFilePrefix), 'w')
+                    dumpFile = open( f'{sLogFilePrefix}.DUMP', 'w', encoding = 'utf-8')
                     dumper=csv.writer(dumpFile, delimiter = shared.DUMPFILE_SEP, quoting = csv.QUOTE_MINIMAL)
                     dumper.writerow(dumpColNames)
                     dumper.writerows(shared.encodeSpecialChars(sMsg))
@@ -125,15 +125,15 @@ def writeLogFile():
 
         if logLevel == shared.L_OPEN:
             try:
-                print("writeLogFile: opening [{0}]".format(sMsg), file=sys.stderr, flush=True)
+                print(f'writeLogFile: opening [{sMsg}]', file=sys.stderr, flush=True)
                 sLogFilePrefix = sMsg
-                logFile = open( "{0}.running.log".format(sMsg), 'a')
+                logFile = open( f'{sMsg}.running.log', 'a', encoding = 'utf-8')
             except Exception as error:
-                print('could not open log file [{0}]: [{1}]'.format(sMsg, error), file=sys.stderr, flush=True)
+                print(f'could not open log file [{sMsg}]: [{error}]', file=sys.stderr, flush=True)
             try:
-                statsFile = open( "{0}.stats".format(sMsg), 'a')
+                statsFile = open( f'{sMsg}.stats', 'a', encoding = 'utf-8')
             except Exception as error:
-                print('could not open stats file [{0}]: [{1}]'.format(sMsg, error), file=sys.stderr, flush=True)
+                print(f'could not open stats file [{sMsg}]: [{error}]', file=sys.stderr, flush=True)
             continue
 
         if logLevel == shared.L_STREAM_START:
@@ -158,11 +158,11 @@ def writeLogFile():
                 logFile.close()
                 logFile=None
                 if shared.ErrorOccurred.value:
-                    sLogFileFinalName = "{0}.ERROR.log".format(sLogFilePrefix)
+                    sLogFileFinalName = f'{sLogFilePrefix}.ERROR.log'
                 else:
-                    sLogFileFinalName = "{0}.ok.log".format(sLogFilePrefix)
+                    sLogFileFinalName = f'{sLogFilePrefix}.ok.log'
                 try:
-                    os.rename("{0}.running.log".format(sLogFilePrefix), sLogFileFinalName)
+                    os.rename(f'{sLogFilePrefix}.running.log', sLogFileFinalName)
                 except Exception:
                     pass
             continue
