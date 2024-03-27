@@ -36,6 +36,7 @@ See sample-* files to have an idea of usage.
     - t means truncate, d delete before inserting
     - i means just insert.
     - a means after, gets a max value from destination to ajust the source query. see append_column and append_query for more details. 
+    
     examples: 
         - T means truncate, insert data, and close log file. 
         - t means truncate, insert, leave log file open for next query
