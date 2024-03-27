@@ -1,0 +1,5 @@
+source	dest	mode	table	query	insert_cols	parallel_writers	append_column
+MSSQL	pginst	T	dest_table	source_table		@d	3
+
+#this second step should be on a different job file, to be run independently
+MSSQL	pginst	A	dest_table	source_table		@d	3	id
