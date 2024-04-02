@@ -1,12 +1,10 @@
 ARG EXTRAVERSION
 FROM datacopy${EXTRAVERSION}:flat
-ARG version="20240328-001"
-ARG oracle_major_version=21
-ARG oracle_minor_version=13
+ARG version="20240402-001"
 LABEL version=${version}
 ENV VERSION=${version}
-ENV LD_LIBRARY_PATH=/opt/instantclient_${oracle_major_version}_${oracle_minor_version}
+RUN echo "export VERSION=${VERSION}" >> /etc/profile.d/datacopy.sh
 WORKDIR /app
-COPY datacopy.py /usr/local/bin/
+COPY datacopy.py launch.sh /usr/local/bin/
 COPY modules /usr/local/bin/modules/
-CMD [ "/usr/local/bin/python3", "/usr/local/bin/datacopy.py" ]
+CMD [ "/usr/local/bin/launch.sh" ]

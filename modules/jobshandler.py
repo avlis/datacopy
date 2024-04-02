@@ -63,7 +63,7 @@ def copyData():
         jobName = f"{shared.queries['index'][jobID]}-{source}-{dest}-{table}"
         logging.openLogFile(dest, table)
         logging.logPrint(jobName, shared.L_STREAM_START)
-        logging.logPrint(f"datacopy version [{os.getenv('VERSION','<unkown>')}] starting")
+        logging.logPrint(f"datacopy version [{os.getenv('BASE_VERSION','<unkown>')}][{os.getenv('VERSION','<unkown>')}] starting")
 
         if not shared.testQueries:
             # cleaning up destination before inserts

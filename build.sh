@@ -5,10 +5,10 @@ if [ ! -z "${EXTRAVERSION}" ]; then
 	EXTRAVERSION="-${EXTRAVERSION}"
 fi
 
-if [ -z "${SKIPBUILD}" ]; then
+if [ -z "${SKIP_BUILD_BASE}" ]; then
 	docker rm dcexport 2>&1 >/dev/null
 	docker rmi datacopy${EXTRAVERSION}:build datacopy${EXTRAVERSION}:flat
-	if 	docker build -t datacopy${EXTRAVERSION}:build -f Dockerfile.build $* . && \
+	if 	docker build -t datacopy${EXTRAVERSION}:build -f base.Dockerfile $* . && \
 		docker run --name dcexport datacopy${EXTRAVERSION}:build /bin/true && \
 		docker export dcexport | docker import - datacopy${EXTRAVERSION}:flat ; then
 		docker rm dcexport 2>&1 >/dev/null

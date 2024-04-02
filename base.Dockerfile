@@ -1,10 +1,10 @@
 FROM python:3-slim
-ARG version="build-20240325-001"
+ARG base_version="base-20240402-001"
 ARG oracle_major_version=21
 ARG oracle_minor_version=13
-LABEL version=${version}
-ENV VERSION=${version}
-ENV LD_LIBRARY_PATH=/opt/instantclient_${oracle_major_version}_${oracle_minor_version}
+LABEL base_version=${base_version}
+ENV BASE_VERSION=${base_version}
+RUN echo "#!/bin/bash\nalias ll='ls -lah'\n\nexport BASE_VERSION=${BASE_VERSION}\nexport LD_LIBRARY_PATH=/opt/instantclient_${oracle_major_version}_${oracle_minor_version}" > /etc/profile.d/datacopy.sh ; chmod +x /etc/profile.d/datacopy.sh
 WORKDIR /app
 RUN apt-get update && apt-get -y dist-upgrade && apt-get -y install curl bash nano screen htop iftop tcpdump net-tools gnupg less iputils-ping unzip gpg
 RUN curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg && curl https://packages.microsoft.com/config/debian/12/prod.list > /etc/apt/sources.list.d/mssql-release.list && echo 'Package: *\nPin: origin packages.microsoft.com\nPin-Priority: 1\n' > /etc/apt/preferences.d/microsoft.pref

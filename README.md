@@ -23,8 +23,11 @@ the following env vars can be used to control it:
 - PARALLEL_READERS (default 1)
 - PARALLEL_READERS_LAUNCH_INTERVAL (default 3 seconds), can be used to override that behaviour
 - ADD_NAMES_DELIMITERS (default no, yes to add double quotes or backtiks on table and column names)
+- RUNAS_UID, GID: to create a regular, non priviliged user to run the copy, and to create the log and stat files with the same user id and group id of a regular user on the host (instead of root). 
 
-See sample-* files to have an idea of usage.
+See sample-run_datacopy.sh for an example of run.
+
+See other sample-* files to have an idea of configuration.
 
 
 ### JOB_FILE COLUMNS (tab delimited)
@@ -122,3 +125,13 @@ fields:
 - rows read or written
 - seconds: total seconds of read or write operations. on multi thread, it is the sum of all threads.
 - thread count
+
+## Building the docker image:
+
+The build is split in two parts, the "base", and the final image itself. The reason is to allow the final image to be around 665 megabytes instead of over 1.1 GB. 
+
+if you are just updating the python code, you can run:
+```
+SKIP_BUILD_BASE=yes ./build.sh
+```
+ 
