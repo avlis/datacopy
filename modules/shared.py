@@ -3,6 +3,7 @@
 #pylint: disable=invalid-name, line-too-long
 
 import os
+import sys
 import multiprocessing as mp
 from datetime import datetime
 
@@ -57,6 +58,12 @@ ReuseWriters:bool = bool(os.getenv('REUSE_WRITERS','no') == 'yes')
 testQueries:bool = bool(os.getenv('TEST_QUERIES','no') == 'yes')
 
 screenStats:bool = bool(os.getenv('SCREEN_STATS','yes') == 'yes')
+
+if os.getenv('SCREEN_STATS_OUTPUT','stderr') == 'stdout':
+    screenStatsOutputFile = sys.stdout
+else:
+    screenStatsOutputFile = sys.stderr
+
 
 stopJobsOnError:bool = bool(os.getenv('STOP_JOBS_ON_ERROR','yes') == 'yes')
 

@@ -19,6 +19,7 @@ the following env vars can be used to control it:
 - DUMPFILE_SEP (default | )
 - STATS_IN_JSON (default no)
 - SCREEN_STATS (default yes)
+- SCREEN_STATS_OUTPUT (default stderr, can be set to)
 - DEBUG (default no, yes to get a lot of detail on stderr, and a DUMP of the block that fails on writes)
 - PARALLEL_READERS (default 1)
 - PARALLEL_READERS_LAUNCH_INTERVAL (default 3 seconds), can be used to override that behaviour

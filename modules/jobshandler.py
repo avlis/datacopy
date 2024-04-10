@@ -349,7 +349,7 @@ def copyData():
                             bEndOfJobs = True
 
                 if shared.screenStats:
-                    print(f'\r{iTotalDataLinesRead:,} records read ({(iTotalDataLinesRead/iTotalReadSecs):,.2f}/sec x {iRunningReaders}r,{iRunningQueries}q), {iTotalDataLinesWritten:,} records written ({(iTotalDataLinesWritten/iTotalWrittenSecs):,.2f}/sec x {iRunningWriters}), data queue len: {shared.dataBuffer.qsize():,}       ', file=sys.stdout, end='', flush = True)
+                    print(f'\r{iTotalDataLinesRead:,} records read ({(iTotalDataLinesRead/iTotalReadSecs):,.2f}/sec x {iRunningReaders}r,{iRunningQueries}q), {iTotalDataLinesWritten:,} records written ({(iTotalDataLinesWritten/iTotalWrittenSecs):,.2f}/sec x {iRunningWriters}), data queue len: {shared.dataBuffer.qsize():,}       ', file=shared.screenStatsOutputFile, end='', flush = True)
 
             if shared.ErrorOccurred.value:
                 #clean up any remaining data
