@@ -1,5 +1,5 @@
 FROM python:3-slim
-ARG base_version="base-20240410-001"
+ARG base_version="base-20240412-001"
 ARG oracle_major_version=21
 ARG oracle_minor_version=13
 LABEL base_version=${base_version}

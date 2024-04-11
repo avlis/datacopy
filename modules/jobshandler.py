@@ -300,7 +300,7 @@ def copyData():
 
                                 for x in range(nbrParallelWriters):
                                     shared.PutConn[iWriters] = newWriteConns[x]
-                                    if newWriteConns[x].__class__.__name__ == 'writer':
+                                    if isinstance(newWriteConns[x], tuple):
                                         shared.PutData[iWriters] = None
                                         shared.writeP[iWriters] = (mp.Process(target=datahandlers.writeDataCSV, args = (threadID, threadName, iWriters, shared.PutConn[iWriters], sCSVHeader, bCSVEncodeSpecial) ))
                                         shared.writeP[iWriters].start()

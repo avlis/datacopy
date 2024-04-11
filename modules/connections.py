@@ -120,7 +120,11 @@ def loadConnections(p_filename:str):
     shared.connections = conns
 
 def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_preQuery:str = '', p_tableName = '', p_mode = 'w'):
-    '''creates connection objects to sources or destinations'''
+    '''creates connection objects to sources or destinations
+
+    returns an array of connections, if connecting to databases, or an array of tupples of (file, stream), if driver == csv
+    
+    '''
 
     nc = {}
 
@@ -222,11 +226,15 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_preQuery:str = '',
                     else:
                         ipath = 0
                     logging.logPrint(f'initConnections({p_name}): opening file=[{sFileName}], mode=[{p_mode}]', shared.L_DEBUG)
-                    nc[x] = csv.writer(open(sFileName, p_mode, encoding = 'utf-8'), dialect = p_name)
+                    newFile = open(sFileName, p_mode, encoding = 'utf-8')
+                    newStream = csv.writer(newFile, dialect = p_name)
+                    nc[x] = (newFile, newStream)
             else:
                 sFileName = os.path.join(_paths[0], f'{p_tableName}.csv')
                 logging.logPrint(f'initConnections({p_name}): opening file=[{sFileName}], mode=[{p_mode}]', shared.L_DEBUG)
-                nc[0] = csv.writer(open(sFileName, p_mode, encoding = 'utf-8'), dialect = p_name)
+                newFile = open(sFileName, p_mode, encoding = 'utf-8')
+                newStream = csv.writer(newFile, dialect = p_name)
+                nc[0] = (newFile, newStream)
         except Exception as error:
             logging.logPrint(f'initConnections({p_name}): CSV error [{error}] opening file [{sFileName}]')
 

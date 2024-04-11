@@ -206,7 +206,7 @@ def writeData(p_jobID:int, p_jobName:str, p_thread:int, p_connection, p_cursor, 
     shared.eventStream.put( (shared.E_WRITE_END, p_jobID, p_jobName, None, None) )
     logging.logPrint(f'\nwriteData({p_jobName}:{p_thread}): Ended', shared.L_DEBUG)
 
-def writeDataCSV(p_jobID:int, p_jobName:str, p_thread:int, p_stream, p_Header:str, p_encodeSpecial:bool = False):
+def writeDataCSV(p_jobID:int, p_jobName:str, p_thread:int, p_conn, p_Header:str, p_encodeSpecial:bool = False):
     '''write data to csv file'''
 
     setproctitle.setproctitle(f'datacopy: writeDataCSV [{p_jobName}]')
@@ -214,10 +214,13 @@ def writeDataCSV(p_jobID:int, p_jobName:str, p_thread:int, p_stream, p_Header:st
     seqnbr = -1
     FOD = 'X'
 
+    #p_conn is returned by initConnections as (file, stream)
+    f_file, f_stream = p_conn
+
     logging.logPrint(f'\nwriteDataCSV({p_jobName}:{p_thread}): Started', shared.L_DEBUG)
     shared.eventStream.put( (shared.E_WRITE_START, p_jobID, p_jobName, None, None) )
     if p_Header != '':
-        p_stream.writerow(p_Header.split(','))
+        f_stream.writerow(p_Header.split(','))
 
     while shared.Working.value and not shared.ErrorOccurred.value:
         try:
@@ -231,16 +234,29 @@ def writeDataCSV(p_jobID:int, p_jobName:str, p_thread:int, p_stream, p_Header:st
         iStart = timer()
         try:
             if p_encodeSpecial:
-                p_stream.writerows(shared.encodeSpecialChars(bData))
+                f_stream.writerows(shared.encodeSpecialChars(bData))
             else:
-                p_stream.writerows(bData)
+                f_stream.writerows(bData)
         except Exception as error:
             shared.ErrorOccurred.value = True
             logging.logPrint(f'writeDataCSV({p_jobName}:{p_thread}): Error: [{error}]')
             logging.logPrint(bData, shared.L_DUMPDATA)
             logging.statsPrint('writeError', p_jobName, 0, (timer() - iStart), p_thread)
+            try:
+                f_file.flush()
+                f_file.close()
+            except Exception as error:
+                pass
             break
         shared.eventStream.put( (shared.E_WRITE, p_jobID, p_jobName, len(bData), (timer()-iStart)) )
+    #make sure the stream is flushedß
+    try:
+        f_file.flush()
+        f_file.close()
+    except Exception as error:
+        shared.ErrorOccurred.value = True
+        logging.logPrint(f'writeDataCSV({p_jobName}:{p_thread}): Error: [{error}]')
+        logging.statsPrint('writeError', p_jobName, 0, (timer() - iStart), p_thread)
 
     shared.eventStream.put( (shared.E_WRITE_END, p_jobID, p_jobName, None, None) )
     logging.logPrint(f'\nwriteDataCSV({p_jobName}:{p_thread}): Ended', shared.L_DEBUG)
