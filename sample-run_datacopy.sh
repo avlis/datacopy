@@ -21,6 +21,7 @@ fi
 eval docker run ${RMOPT} --name ${jobname} --log-driver=none -a stdin -a stdout -a stderr --network=host \
 --mount type=bind,source="$(pwd)",target=/app \
 --mount type=bind,source=/var/run/postgresql,target=/var/run/postgresql \
+-e IDLE_TIMEOUT_SECS=${IDLE_TIMEOUT_SECS:-0} \
 -e RUNAS_UID=${RUNAS_UID} -e RUNAS_GID=${RUNAS_GID} \
 -e JOB_FILE=${jobname}.csv -e LOG_FILE=${LOG_TIMESTAMP}-${jobname} \
 -e ADD_NAMES_DELIMITERS=${ADD_NAMES_DELIMITERS:-no} \
