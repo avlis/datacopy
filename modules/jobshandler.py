@@ -42,6 +42,8 @@ def copyData():
 
     iReadSecs = {}
 
+    iIdleTimeout = 0
+
     logging.logPrint(f'copyData: entering jobs loop, max readers allowed: [{shared.parallelReaders}]')
 
     while jobID < len(shared.queries) and shared.Working.value and not shared.ErrorOccurred.value:
@@ -154,6 +156,8 @@ def copyData():
                 try:
                     eType, threadID, threadName, recs, secs = shared.eventStream.get(block = True, timeout = 1) # pylint: disable=unused-variable
                     #logging.logPrint('\nstreamevent: [{0},{1},{2},{3}]'.format(eType,threadID, recs, secs), shared.L_DEBUG)
+
+                    iIdleTimeout = 0
 
 #shared.E_READ
                     if eType == shared.E_READ:
@@ -332,8 +336,14 @@ def copyData():
                     elif eType == shared.E_WRITE_END:
                         iRunningWriters -= 1
 
+#nothing happended the last second, check idle timeout
                 except queue.Empty:
-                    pass
+                    iIdleTimeout += 1
+
+                    if shared.idleTimetoutSecs > 0 and iIdleTimeout > shared.idleTimetoutSecs:
+                        logging.logPrint(f'copyData: ERROR: idle timeout secs [{shared.idleTimetoutSecs}] reached.')
+                        logging.statsPrint('IdleTimeoutError', jobName, 0, shared.idleTimetoutSecs, 0)
+                        shared.ErrorOccurred.value = True
 
 #common part of event processing:
                 if tParallelReadersNextCheck < timer():
@@ -381,9 +391,3 @@ def copyData():
         shared.ErrorOccurred.value = False
 
         jobID += 1
-
-    #pylint: disable=consider-using-dict-items
-    for i in shared.readP:
-        shared.readP[i].terminate()
-    for i in shared.writeP:
-        shared.writeP[i].terminate()

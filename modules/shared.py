@@ -44,7 +44,7 @@ D_EOD = '\x04'
 connections = {}
 queries = {}
 
-defaultFetchSize:int = 1000
+defaultFetchSize:int = 1024
 
 logFileName:str = ''
 readP = {}
@@ -81,6 +81,8 @@ else:
 
 parallelReaders = int(os.getenv('PARALLEL_READERS','1'))
 parallelReadersLaunchInterval = int(os.getenv('PARALLEL_READERS_LAUNCH_INTERVAL','3'))
+
+idleTimetoutSecs = int(os.getenv('IDLE_TIMEOUT_SECS','0'))
 
 
 #### SHARED OBJECTS

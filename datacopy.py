@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# pylint: disable=invalid-name, wrong-import-position, line-too-long
+# pylint: disable=invalid-name, wrong-import-position, line-too-long, broad-exception-caught
 
 '''
 script to copy loads of data between databases
@@ -47,8 +47,8 @@ def sig_handler(signum, frame):
 
     p = mp.current_process()
     if p.name == 'MainProcess':
-        logging.statsPrint('ERROR', 'CONTROL-C', 0, 0, 0)
-        logging.logPrint(f'sigHander: Error: break signal received ({signum},{frame}), signaling stop to threads...')
+        logging.statsPrint('stopRequestedError', 'MainThread', 0, 0, 0)
+        logging.logPrint(f'sigHander: Error: stop signal received ({signum},{frame}), signaling stop to threads...')
         shared.ErrorOccurred.value = True
         shared.Working.value = False
 
@@ -57,6 +57,7 @@ def Main():
     '''entry point'''
 
     signal.signal(signal.SIGINT, sig_handler)
+    signal.signal(signal.SIGTERM, sig_handler)
 
     if len(sys.argv) < 4:
         shared.logFileName = os.getenv('LOG_FILE','')
@@ -75,20 +76,47 @@ def Main():
 
     setproctitle.setproctitle(f'datacopy: main thread [{q_filename}]')
 
-    logProcessor=mp.Process(target=logging.writeLogFile)
-    logProcessor.start()
+    logging.logThread = mp.Process(target=logging.writeLogFile)
+    logging.logThread.start()
 
     connections.loadConnections(c_filename)
     jobs.loadJobs(q_filename)
 
     jobs.preCheck()
     jobshandler.copyData()
-    print ('exited copydata!')
+
+    logging.logPrint('exited copydata!', shared.L_DEBUG)
+
+    #pylint: disable=consider-using-dict-items
+    logging.logPrint(f'making sure all read threads are terminated [{len(shared.readP)}]...', shared.L_DEBUG)
+    for i in shared.readP:
+        try:
+            shared.readP[i].terminate()
+            shared.readP[i].join(timeout=3)
+        except Exception as error:
+            logging.logPrint(f'error terminating read thread {i} ({sys.exc_info()[2].tb_lineno}): [{error}]', shared.L_DEBUG)
+            continue
+
+    logging.logPrint(f'making sure all write threads are terminated [{len(shared.writeP)}]...', shared.L_DEBUG)
+    for i in shared.writeP:
+        try:
+            shared.writeP[i].terminate()
+            shared.writeP[i].join(timeout=3)
+        except Exception as error:
+            logging.logPrint(f'error terminating write thread {i} ({sys.exc_info()[2].tb_lineno}): [{error}]', shared.L_DEBUG)
+            continue
+
+    logging.logPrint('all worker threads terminated and joined.', shared.L_DEBUG)
+
+
     if shared.ErrorOccurred.value:
         logging.closeLogFile(6)
 
     else:
         logging.closeLogFile(0)
+
+    if shared.DEBUG:
+        print ('end of Main()', file=sys.stderr, flush=True)
 
 if __name__ == '__main__':
     Main()

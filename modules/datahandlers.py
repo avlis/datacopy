@@ -69,8 +69,16 @@ def readData(p_jobID:int, p_jobName:str, p_connection, p_cursor, p_fetchSize:int
     else:
         logging.logPrint(f'\nreadData({p_jobName}): testing queries mode, stopping read.', shared.L_DEBUG)
 
-    shared.eventStream.put( (shared.E_READ_END, p_jobID, p_jobName, None, None) )
+    try:
+        p_cursor.close()
+    except Exception:
+        pass
+    try:
+        p_connection.close()
+    except Exception:
+        pass
 
+    shared.eventStream.put( (shared.E_READ_END, p_jobID, p_jobName, None, None) )
     logging.logPrint(f'\nreadData({p_jobName}): Ended', shared.L_DEBUG)
 
 def readData2(p_jobID:int, p_jobName:str, p_connection, p_connection2, p_cursor, p_cursor2, p_fetchSize:int, p_query:str, p_query2:str):
@@ -153,8 +161,24 @@ def readData2(p_jobID:int, p_jobName:str, p_connection, p_connection2, p_cursor,
             #logging.logPrint(f'pushed shared.seqnbr {shared.seqnbr.value} (data)', shared.L_DEBUG)
             shared.seqnbr.value += 1
 
-    shared.eventStream.put( (shared.E_READ_END, p_jobID, p_jobName, None, None) )
+    try:
+        p_cursor.close()
+    except Exception:
+        pass
+    try:
+        p_connection.close()
+    except Exception:
+        pass
+    try:
+        p_cursor2.close()
+    except Exception:
+        pass
+    try:
+        p_connection2.close()
+    except Exception:
+        pass
 
+    shared.eventStream.put( (shared.E_READ_END, p_jobID, p_jobName, None, None) )
     logging.logPrint(f'\nreadData2({p_jobName}): Ended', shared.L_DEBUG)
 
 def writeData(p_jobID:int, p_jobName:str, p_thread:int, p_connection, p_cursor, p_iQuery:str = ''):
@@ -195,6 +219,7 @@ def writeData(p_jobID:int, p_jobName:str, p_thread:int, p_connection, p_cursor, 
         if wr == -1:
             wr = len(bData) # let's hope that all rows were writen...
         shared.eventStream.put( (shared.E_WRITE, p_jobID, p_jobName, wr, (timer() - iStart)) )
+
     try:
         p_cursor.close()
     except Exception:
@@ -203,6 +228,7 @@ def writeData(p_jobID:int, p_jobName:str, p_thread:int, p_connection, p_cursor, 
         p_connection.close()
     except Exception:
         pass
+
     shared.eventStream.put( (shared.E_WRITE_END, p_jobID, p_jobName, None, None) )
     logging.logPrint(f'\nwriteData({p_jobName}:{p_thread}): Ended', shared.L_DEBUG)
 
@@ -245,7 +271,7 @@ def writeDataCSV(p_jobID:int, p_jobName:str, p_thread:int, p_conn, p_Header:str,
             try:
                 f_file.flush()
                 f_file.close()
-            except Exception as error:
+            except Exception:
                 pass
             break
         shared.eventStream.put( (shared.E_WRITE, p_jobID, p_jobName, len(bData), (timer()-iStart)) )
