@@ -116,7 +116,13 @@ def writeLogFile():
             (logLevel, sMsg) = shared.logStream.get( block=True, timeout = 1 )
         except queue.Empty:
             continue
-        except Exception:
+        except OSError:
+            if shared.DEBUG:
+                print(f'writeLogFile: EOError exception. giving up.', file=sys.stderr, flush=True)
+            break
+        except Exception as error:
+            if shared.DEBUG:
+                print(f'writeLogFile: Exception at line ({sys.exc_info()[2].tb_lineno}): [{error}]', file=sys.stderr, flush=True)
             continue
 
         #print(f'logwriter: received message [{logLevel}][{sMsg}]', file=sys.stderr, flush=True)
