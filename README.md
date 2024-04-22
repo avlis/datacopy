@@ -72,16 +72,16 @@ See other sample-* files to have an idea of configuration.
 
 - pre_query_src, pre_query_dst: like query, but will run on source or destination connections before other statements. for things like "set dateformat ymd", for instance...
 
--- csv_encode_special: when we have \n or \t or other control characters on data, it may mess up the csv file. 
+- csv_encode_special: when we have \n or \t or other control characters on data, it may mess up the csv file. 
     this option will translate special chars (ascill < 32 to \0x string representation)
     this translation is always applied to DUMP files. 
 
--- override_insert_placeholder: to override the default %s insert placeholder. Found that some azure stuff need a ? instead...
+- override_insert_placeholder: to override the default %s insert placeholder. Found that some azure stuff need a ? instead...
 
--- append_column: on mode A, with just table names on source and destination: will do a select max(append_column) on destination, and will change the source query to select * from source where append_column > max_from_dest; if the source is a custom query, the max_from_dest value will be available to be replaced with the placeholder #MAX_KEY_VALUE#.
+- append_column: on mode A, with just table names on source and destination: will do a select max(append_column) on destination, and will change the source query to select * from source where append_column > max_from_dest; if the source is a custom query, the max_from_dest value will be available to be replaced with the placeholder #MAX_KEY_VALUE#.
 
--- append_query: if for some reason, the value to be used as a bigger than filter needs a more complicated filter (or comes from a different table), you can customise the select statement. it should return only one row and one column. same rules as query applies: it can be a query on the jobs file, or it can be prefixed with an @ to point to a file.
--- append_source: if for some reason it needs to come from a connection that is not the destination, it can be overriden with this column.
+- append_query: if for some reason, the value to be used as a bigger than filter needs a more complicated filter (or comes from a different table), you can customise the select statement. it should return only one row and one column. same rules as query applies: it can be a query on the jobs file, or it can be prefixed with an @ to point to a file.
+- append_source: if for some reason it needs to come from a connection that is not the destination, it can be overriden with this column.
 
 ## stats
 a .stats file is created on the same folder as the log file. can be a csv (tab delimited) or in json format.
