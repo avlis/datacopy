@@ -379,7 +379,7 @@ def copyData():
         except Exception as error:
             shared.ErrorOccurred.value = True
             logging.logPrint(f'copyData: ERROR at line ({sys.exc_info()[2].tb_lineno}): [{error}]')
-            logging.statsPrint('ERROR', jobName, 0, 0, 0)
+            logging.statsPrint('genericError', jobName, 0, 0, 0)
         finally:
             #if a control-c occurred, also rename file
             if mode == mode.upper() or not shared.Working.value or (shared.stopJobsOnError and shared.ErrorOccurred.value):
