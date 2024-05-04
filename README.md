@@ -121,7 +121,7 @@ or json mode:
 ```
 
 ### fields:
-- timestamp
+- ts: timestamp of this event
 - execID: cam be used to group batches of datacopys, running as one big logical job. Useful if you run a couple of datacopys hourly, and send these stats to elasticsearch, for example.
 - event: execQuery is about cursor.execute(), read is reads, write is writes, stream marks the beginings and ends of groups of jobs whitin this job file.  
 - jobID (concat of line number, source, destination, destination table name, from jobs.csv file)
@@ -132,6 +132,7 @@ or json mode:
 ### About queueStats and streamEnd events:
 
 queueStats will tell you the "high watermark" of packets in the queue. if a buffer full is observed, the secs will add up (in this particular case, not per seconds, but per events processed). This means that if secs > 0, your buffer is too small, or the number of writer threads is not enough to keep up with your readers.
+In the threads column, the queueStats will store the fetch_size (records per commit), so it's easier to analise historical data for performance issues (considerations about number of threads and commit sizes).
 
 the streamEnd used to always have the recs=0; now it shows up the total number of "idle seconds". Meaning, the amount of seconds where no events were observed. This information comes from the idleTimeout mechanism. It may be bigger than the allowed idle time, because if there some events before that limit, the idle timeout counter resets, but not this total counter.
 
