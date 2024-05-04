@@ -127,7 +127,7 @@ def copyData():
                         cGetMaxID.execute(getMaxQuery)
                         oMaxAlreadyInsertedData = cGetMaxID.fetchone()[0]
 
-                        logging.statsPrint('getMaxAtDestinationEnd', jobName, 0, timer() - cStart, oMaxAlreadyInsertedData)
+                        logging.statsPrint('getMaxAtDestinationEnd', jobName, oMaxAlreadyInsertedData, timer() - cStart, 0)
                         logging.logPrint(f'copyData({jobName}): max value  is [{oMaxAlreadyInsertedData}]')
                     except Exception as error:
                         logging.logPrint(f'copyData({jobName}): ERROR getting max value: [{error}]')

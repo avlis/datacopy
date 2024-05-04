@@ -90,7 +90,7 @@ example:
 ```
 20240325100048.850060	exec_id_1	streamStart	1-o_more-d_more-kernelhistory	0	0.00	1
 20240325100049.013253	exec_id_1	getMaxAtDestinationStart	1-o_more-d_more-kernelhistory	0	0.00	0
-20240325100049.013883	exec_id_1	getMaxAtDestinationEnd	1-o_more-d_more-kernelhistory	0	0.00	288343539
+20240325100049.013883	exec_id_1	getMaxAtDestinationEnd	1-o_more-d_more-kernelhistory	288343539	0.01	0
 20240325100049.069554	exec_id_1	execQueryStart	1-o_more-d_more-kernelhistory	0	0.00	1
 20240325100049.072864	exec_id_1	execQueryEnd	1-o_more-d_more-kernelhistory	0	0.00	0
 20240325100049.074555	exec_id_1	readDataStart	1-o_more-d_more-kernelhistory	0	0.00	1
@@ -107,7 +107,7 @@ or json mode:
 ```
 {"dc.ts":"20240325100128.392068","dc.execID":"exec_id_2","dc.event":"streamStart","dc.jobID":"1-o_more-d_more-kernelhistory","dc.recs":0,"dc.secs":0.00,"dc.threads":1}
 {"dc.ts":"20240325100128.548502","dc.execID":"exec_id_2","dc.event":"getMaxAtDestinationStart","dc.jobID":"1-o_more-d_more-kernelhistory","dc.recs":0,"dc.secs":0.00,"dc.threads":0}
-{"dc.ts":"20240325100128.549177","dc.execID":"exec_id_2","dc.event":"getMaxAtDestinationEnd","dc.jobID":"1-o_more-d_more-kernelhistory","dc.recs":0,"dc.secs":0.00,"dc.threads":288343936}
+{"dc.ts":"20240325100128.549177","dc.execID":"exec_id_2","dc.event":"getMaxAtDestinationEnd","dc.jobID":"1-o_more-d_more-kernelhistory","dc.recs":288343539,"dc.secs":0.01,"dc.threads":0}
 {"dc.ts":"20240325100128.613191","dc.execID":"exec_id_2","dc.event":"execQueryStart","dc.jobID":"1-o_more-d_more-kernelhistory","dc.recs":0,"dc.secs":0.00,"dc.threads":1}
 {"dc.ts":"20240325100128.615363","dc.execID":"exec_id_2","dc.event":"execQueryEnd","dc.jobID":"1-o_more-d_more-kernelhistory","dc.recs":0,"dc.secs":0.00,"dc.threads":0}
 {"dc.ts":"20240325100128.615964","dc.execID":"exec_id_2","dc.event":"readDataStart","dc.jobID":"1-o_more-d_more-kernelhistory","dc.recs":0,"dc.secs":0.00,"dc.threads":1}
@@ -129,9 +129,13 @@ or json mode:
 - secs: total seconds of read or write operations. Only makes sense in *Ends. On multi threading writers, it is the sum of all threads (so, bigger than real time spent.). in streamEnd, it means real time seconds.
 - threads: number of parallel stuff going on.
 
-### About queueStats and streamEnd events:
+### getMaxAtDestinationEnd event:
+    when using the Append Mode, the "select max() from dest" value will be stored in the recs column.
+
+### queueStats and streamEnd events:
 
 queueStats will tell you the "high watermark" of packets in the queue. if a buffer full is observed, the secs will add up (in this particular case, not per seconds, but per events processed). This means that if secs > 0, your buffer is too small, or the number of writer threads is not enough to keep up with your readers.
+
 In the threads column, the queueStats will store the fetch_size (records per commit), so it's easier to analise historical data for performance issues (considerations about number of threads and commit sizes).
 
 the streamEnd used to always have the recs=0; now it shows up the total number of "idle seconds". Meaning, the amount of seconds where no events were observed. This information comes from the idleTimeout mechanism. It may be bigger than the allowed idle time, because if there some events before that limit, the idle timeout counter resets, but not this total counter.
