@@ -130,7 +130,7 @@ or json mode:
 - threads: number of parallel stuff going on.
 
 ### getMaxAtDestinationEnd event:
-    when using the Append Mode, the "select max() from dest" value will be stored in the recs column.
+when using the Append Mode, the "select max() from dest" value will be stored in the recs column.
 
 ### queueStats and streamEnd events:
 
