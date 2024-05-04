@@ -18,8 +18,8 @@ logThread = None
 
 def logPrint(p_Message:str, p_logLevel:int=1):
     ''' sends message to the queue that manages logging'''
-    if shared.DEBUG:
-        print(f'logPrint: adding message to the log queue [{p_logLevel}][{p_Message}]', file=sys.stderr, flush=True)
+    #if shared.DEBUG:
+    #    print(f'logPrint: adding message to the log queue [{p_logLevel}][{p_Message}]', file=sys.stderr, flush=True)
     shared.logStream.put((p_logLevel, p_Message))
 
 def statsPrint(p_type:str, p_jobName:str, p_recs:int, p_secs:float, p_threads:int):
@@ -50,7 +50,7 @@ def closeLogFile(p_exitCode = None):
     loopTimeout = 10
     while shared.logStream.qsize() > 0 and loopTimeout > 0:
         if shared.DEBUG:
-            print(f'waiting for empty log queue, stage 1 [{shared.logStream.qsize()}]', file=sys.stderr, flush=True)
+            print(f'closeLogFile: waiting for empty log queue, stage 1 [{shared.logStream.qsize()}]', file=sys.stderr, flush=True)
         sleep(1)
         loopTimeout -= 1
 
@@ -58,39 +58,42 @@ def closeLogFile(p_exitCode = None):
     loopTimeout = 3
     while shared.logStream.qsize() > 0 and loopTimeout > 0:
         if shared.DEBUG:
-            print(f'waiting for empty log queue, stage 2 [{shared.logStream.qsize()}]', file=sys.stderr, flush=True)
+            print(f'closeLogFile: waiting for empty log queue, stage 2 [{shared.logStream.qsize()}]', file=sys.stderr, flush=True)
         sleep(1)
         loopTimeout -= 1
 
-    if p_exitCode:
+    if p_exitCode is not None:
+        if shared.DEBUG:
+            print('closeLogFile: sending the log thread a stop command.', file=sys.stderr, flush=True)
         shared.logStream.put( (shared.L_END, mp.current_process().name) )
+        sleep(1)
 
     loopTimeout = 3
     while shared.logStream.qsize() > 0 and loopTimeout > 0:
         if shared.DEBUG:
-            print(f'waiting for empty log queue, stage 3 [{shared.logStream.qsize()}]', file=sys.stderr, flush=True)
+            print(f'closeLogFile: waiting for empty log queue, stage 3 [{shared.logStream.qsize()}]', file=sys.stderr, flush=True)
         sleep(1)
         loopTimeout -= 1
 
     if shared.logStream.qsize() > 0 and shared.DEBUG:
-        print('something is wrong, quitting with log messages still in the queue!', file=sys.stderr, flush=True)
+        print('closeLogFile: something is wrong, quitting with log messages still in the queue!', file=sys.stderr, flush=True)
 
     if p_exitCode is not None:
         if shared.DEBUG:
-            print('making sure log thread is terminated...', file=sys.stderr, flush=True)
+            print('closeLogFile: making sure log thread is terminated...', file=sys.stderr, flush=True)
 
         try:
             logThread.terminate()
             logThread.join(timeout=5)
 
         except Exception as error:
-            print(f'error terminating log thread ({sys.exc_info()[2].tb_lineno}): [{error}]', file=sys.stderr, flush=True)
+            print(f'closeLogFile: error terminating log thread ({sys.exc_info()[2].tb_lineno}): [{error}]', file=sys.stderr, flush=True)
 
         if shared.DEBUG:
-            print('log thread terminated and joined.', file=sys.stderr, flush=True)
+            print('closeLogFile: log thread terminated and joined.', file=sys.stderr, flush=True)
 
         if shared.DEBUG:
-            print(f'exiting with exitcode [{p_exitCode}]', file=sys.stderr, flush=True)
+            print(f'closeLogFile: exiting with exitcode [{p_exitCode}]', file=sys.stderr, flush=True)
         sys.exit(p_exitCode)
 
 def writeLogFile():
@@ -118,7 +121,7 @@ def writeLogFile():
             continue
         except OSError:
             if shared.DEBUG:
-                print(f'writeLogFile: EOError exception. giving up.', file=sys.stderr, flush=True)
+                print('writeLogFile: EOError exception. giving up.', file=sys.stderr, flush=True)
             break
         except Exception as error:
             if shared.DEBUG:
@@ -169,14 +172,15 @@ def writeLogFile():
                 sLogFilePrefix = sMsg
                 logFile = open( f'{sMsg}.running.log', 'a', encoding = 'utf-8')
             except Exception as error:
-                print(f'could not open log file [{sMsg}]: [{error}]', file=sys.stderr, flush=True)
+                print(f'writeLogFile: could not open log file [{sMsg}]: [{error}]', file=sys.stderr, flush=True)
             try:
                 statsFile = open( f'{sMsg}.stats', 'a', encoding = 'utf-8')
             except Exception as error:
-                print(f'could not open stats file [{sMsg}]: [{error}]', file=sys.stderr, flush=True)
+                print(f'writeLogFile: could not open stats file [{sMsg}]: [{error}]', file=sys.stderr, flush=True)
             continue
 
         if logLevel == shared.L_STREAM_START:
+            shared.idleSecsObserved.value = 0
             rStart = timer()
             if statsFile:
                 try:
@@ -188,7 +192,7 @@ def writeLogFile():
         if logLevel == shared.L_STREAM_END:
             if statsFile:
                 try:
-                    print(shared.statsFormat.format(datetime.now().strftime('%Y%m%d%H%M%S.%f'), shared.executionID, 'streamEnd', sMsg, 0, timer()-rStart, 0 ), file=statsFile, flush=True)
+                    print(shared.statsFormat.format(datetime.now().strftime('%Y%m%d%H%M%S.%f'), shared.executionID, 'streamEnd', sMsg, shared.idleSecsObserved.value, timer()-rStart, 0 ), file=statsFile, flush=True)
                 except Exception:
                     pass
             continue
@@ -208,7 +212,9 @@ def writeLogFile():
             continue
 
         if logLevel == shared.L_END:
+            if shared.DEBUG:
+                print('writeLogFile: received stop message.', file=sys.stderr, flush=True)
             bKeepGoing = False
 
     if shared.DEBUG:
-        print('writeLogFile exiting...', file=sys.stderr, flush=True)
+        print('writeLogFile: exiting...', file=sys.stderr, flush=True)

@@ -80,9 +80,13 @@ else:
     statsFormat = '{0}\t{1}\t{2}\t{3}\t{4}\t{5:.2f}\t{6}'
 
 parallelReaders = int(os.getenv('PARALLEL_READERS','1'))
-parallelReadersLaunchInterval = int(os.getenv('PARALLEL_READERS_LAUNCH_INTERVAL','3'))
+parallelReadersLaunchInterval = int(os.getenv('PARALLEL_READERS_LAUNCH_INTERVAL','1'))
 
 idleTimetoutSecs = int(os.getenv('IDLE_TIMEOUT_SECS','0'))
+
+maxQueueLenObserved:int = 0
+maxQueueLenObservedEvents:int = 0
+idleSecsObserved = mp.Value('i', 0)
 
 
 #### SHARED OBJECTS

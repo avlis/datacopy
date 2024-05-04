@@ -314,8 +314,9 @@ def copyData():
                                         shared.writeP[iWriters].start()
                                     iWriters += 1
                                     iRunningWriters += 1
-                                    logging.statsPrint('writeDataStart', threadName, 0, 0, iRunningWriters)
+
                                 writersNotStartedYet = False
+                                logging.statsPrint('writeDataStart', threadName, 0, 0, iRunningWriters)
 
 #shared.E_READ_END
                     elif eType == shared.E_READ_END:
@@ -339,6 +340,7 @@ def copyData():
 #nothing happended the last second, check idle timeout
                 except queue.Empty:
                     iIdleTimeout += 1
+                    shared.idleSecsObserved.value += 1
 
                     if shared.idleTimetoutSecs > 0 and iIdleTimeout > shared.idleTimetoutSecs:
                         logging.logPrint(f'copyData: ERROR: idle timeout secs [{shared.idleTimetoutSecs}] reached.')
@@ -346,9 +348,17 @@ def copyData():
                         shared.ErrorOccurred.value = True
 
 #common part of event processing:
+                iCurrentQueueSize = shared.dataBuffer.qsize()
+
+                if iCurrentQueueSize > shared.maxQueueLenObserved:
+                    shared.maxQueueLenObserved = iCurrentQueueSize
+
+                if iCurrentQueueSize == shared.queueSize:
+                    shared.maxQueueLenObservedEvents +=1
+
                 if tParallelReadersNextCheck < timer():
                     tParallelReadersNextCheck = timer() + shared.parallelReadersLaunchInterval
-                    if  not bEndOfJobs and not bCloseStream and iRunningReaders < shared.parallelReaders and shared.dataBuffer.qsize()<shared.usedQueueBeforeNew:
+                    if  not bEndOfJobs and not bCloseStream and iRunningReaders < shared.parallelReaders and iCurrentQueueSize<shared.usedQueueBeforeNew:
                         if jobID<len(shared.queries)-1:
                             jobID += 1
                             jobName = f"{shared.queries['index'][jobID]}-{shared.queries['source'][jobID]}-{shared.queries['dest'][jobID]}-{shared.queries['table'][jobID]}"
@@ -359,7 +369,7 @@ def copyData():
                             bEndOfJobs = True
 
                 if shared.screenStats:
-                    print(f'\r{iTotalDataLinesRead:,} records read ({(iTotalDataLinesRead/iTotalReadSecs):,.2f}/sec x {iRunningReaders}r,{iRunningQueries}q), {iTotalDataLinesWritten:,} records written ({(iTotalDataLinesWritten/iTotalWrittenSecs):,.2f}/sec x {iRunningWriters}), data queue len: {shared.dataBuffer.qsize():,}       ', file=shared.screenStatsOutputFile, end='', flush = True)
+                    print(f'\r{iTotalDataLinesRead:,} recs read ({(iTotalDataLinesRead/iTotalReadSecs):,.2f}/sec x {iRunningReaders}r,{iRunningQueries}q), {iTotalDataLinesWritten:,} recs written ({(iTotalDataLinesWritten/iTotalWrittenSecs):,.2f}/sec x {iRunningWriters}), queue len: {iCurrentQueueSize:,}, max queue: {shared.maxQueueLenObserved}, timeout timer: {iIdleTimeout}, idle time: {shared.idleSecsObserved.value}        ', file=shared.screenStatsOutputFile, end='', flush = True)
 
             if shared.ErrorOccurred.value:
                 #clean up any remaining data
@@ -374,6 +384,9 @@ def copyData():
             print('\n', file=sys.stdout, flush = True)
             logging.logPrint(f'copyData({jobName}): {iTotalDataLinesWritten:,} rows copied in {iTotalWrittenSecs:,.2f} seconds ({(iTotalDataLinesWritten/iTotalWrittenSecs):,.2f}/sec).')
             logging.statsPrint('writeDataEnd', jobName, iTotalDataLinesWritten, iTotalWrittenSecs, nbrParallelWriters)
+            logging.statsPrint('queueStats', jobName, shared.maxQueueLenObserved, shared.maxQueueLenObservedEvents, fetchSize)
+            shared.maxQueueLenObserved = 0
+            shared.maxQueueLenObservedEvents = 0
             logging.logPrint(jobName, shared.L_STREAM_END)
 
         except Exception as error:

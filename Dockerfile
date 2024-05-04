@@ -1,6 +1,6 @@
 ARG EXTRAVERSION
 FROM datacopy${EXTRAVERSION}:flat
-ARG version="20240420-001"
+ARG version="20240501-001"
 LABEL version=${version}
 ENV VERSION=${version}
 RUN echo "export VERSION=${VERSION}" >> /etc/profile.d/datacopy.sh

@@ -32,7 +32,7 @@ See sample-run_datacopy.sh for an example of run.
 See other sample-* files to have an idea of configuration.
 
 
-### JOB_FILE COLUMNS (tab delimited)
+## JOB_FILE COLUMNS (tab delimited)
 
 - source, dest: must match something on first column of connections.csv
 
@@ -99,6 +99,7 @@ example:
 20240325100049.215625	exec_id_1	writeDataStart	1-o_more-d_more-kernelhistory	0	0.00	3
 20240325100049.216968	exec_id_1	readDataEnd	1-o_more-d_more-kernelhistory	397	0.00	0
 20240325100049.234455	exec_id_1	writeDataEnd	1-o_more-d_more-kernelhistory	397	0.02	3
+20240325100049.234455	exec_id_1	queueStats	1-o_more-d_more-kernelhistory	9	0.00	1000
 20240325100049.235270	exec_id_1	streamEnd	1-o_more-d_more-kernelhistory	0	0.39	0
 ```
 
@@ -115,24 +116,32 @@ or json mode:
 {"dc.ts":"20240325100128.754842","dc.execID":"exec_id_2","dc.event":"writeDataStart","dc.jobID":"1-o_more-d_more-kernelhistory","dc.recs":0,"dc.secs":0.00,"dc.threads":3}
 {"dc.ts":"20240325100128.756119","dc.execID":"exec_id_2","dc.event":"readDataEnd","dc.jobID":"1-o_more-d_more-kernelhistory","dc.recs":36,"dc.secs":0.00,"dc.threads":0}
 {"dc.ts":"20240325100128.765983","dc.execID":"exec_id_2","dc.event":"writeDataEnd","dc.jobID":"1-o_more-d_more-kernelhistory","dc.recs":36,"dc.secs":0.01,"dc.threads":3}
+{"dc.ts":"20240325100128.766758","dc.execID":"exec_id_2","dc.event":"queueStats","dc.jobID":"1-o_more-d_more-kernelhistory","dc.recs":9,"dc.secs":0.00,"dc.threads":1000}
 {"dc.ts":"20240325100128.766758","dc.execID":"exec_id_2","dc.event":"streamEnd","dc.jobID":"1-o_more-d_more-kernelhistory","dc.recs":0,"dc.secs":0.37,"dc.threads":0}
 ```
 
-fields:
+### fields:
 - timestamp
-- execution ID
-- type: execQuery is time of cursor.execute(), read is read, write is writes, totalTime is... well, total Time on this Log File.  
+- execID: cam be used to group batches of datacopys, running as one big logical job. Useful if you run a couple of datacopys hourly, and send these stats to elasticsearch, for example.
+- event: execQuery is about cursor.execute(), read is reads, write is writes, stream marks the beginings and ends of groups of jobs whitin this job file.  
 - jobID (concat of line number, source, destination, destination table name, from jobs.csv file)
-- rows read or written
-- seconds: total seconds of read or write operations. on multi thread, it is the sum of all threads.
-- thread count
+- recs: number of records read or written in this particular event. Only makes sense in *Ends.
+- secs: total seconds of read or write operations. Only makes sense in *Ends. On multi threading writers, it is the sum of all threads (so, bigger than real time spent.). in streamEnd, it means real time seconds.
+- threads: number of parallel stuff going on.
+
+### About queueStats and streamEnd events:
+
+queueStats will tell you the "high watermark" of packets in the queue. if a buffer full is observed, the secs will add up (in this particular case, not per seconds, but per events processed). This means that if secs > 0, your buffer is too small, or the number of writer threads is not enough to keep up with your readers.
+
+the streamEnd used to always have the recs=0; now it shows up the total number of "idle seconds". Meaning, the amount of seconds where no events were observed. This information comes from the idleTimeout mechanism. It may be bigger than the allowed idle time, because if there some events before that limit, the idle timeout counter resets, but not this total counter.
 
 
-### Signals
+## Signals
+
 when SIGINT (control-C) or SIGTERM are received, an error message is written on both log and stats files, and there is an attempt to terminate the connections and threads gracefully. So use docker stop instead of docker kill if not using this interactively.
 
 
-### Building the docker image:
+## Building the docker image:
 
 The build is split in two parts, the "base", and the final image itself. The reason is to allow the final image to be around 665 megabytes instead of over 1.1 GB. 
 

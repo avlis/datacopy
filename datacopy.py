@@ -85,28 +85,28 @@ def Main():
     jobs.preCheck()
     jobshandler.copyData()
 
-    logging.logPrint('exited copydata!', shared.L_DEBUG)
+    logging.logPrint('main: exited copydata!', shared.L_DEBUG)
 
     #pylint: disable=consider-using-dict-items
-    logging.logPrint(f'making sure all read threads are terminated [{len(shared.readP)}]...', shared.L_DEBUG)
+    logging.logPrint(f'main: making sure all read threads are terminated [{len(shared.readP)}]...', shared.L_DEBUG)
     for i in shared.readP:
         try:
             shared.readP[i].terminate()
             shared.readP[i].join(timeout=3)
         except Exception as error:
-            logging.logPrint(f'error terminating read thread {i} ({sys.exc_info()[2].tb_lineno}): [{error}]', shared.L_DEBUG)
+            logging.logPrint(f'main: error terminating read thread {i} ({sys.exc_info()[2].tb_lineno}): [{error}]', shared.L_DEBUG)
             continue
 
-    logging.logPrint(f'making sure all write threads are terminated [{len(shared.writeP)}]...', shared.L_DEBUG)
+    logging.logPrint(f'main: making sure all write threads are terminated [{len(shared.writeP)}]...', shared.L_DEBUG)
     for i in shared.writeP:
         try:
             shared.writeP[i].terminate()
             shared.writeP[i].join(timeout=3)
         except Exception as error:
-            logging.logPrint(f'error terminating write thread {i} ({sys.exc_info()[2].tb_lineno}): [{error}]', shared.L_DEBUG)
+            logging.logPrint(f'main: error terminating write thread {i} ({sys.exc_info()[2].tb_lineno}): [{error}]', shared.L_DEBUG)
             continue
 
-    logging.logPrint('all worker threads terminated and joined.', shared.L_DEBUG)
+    logging.logPrint('main: all worker threads terminated and joined.', shared.L_DEBUG)
 
 
     if shared.ErrorOccurred.value:
@@ -116,7 +116,7 @@ def Main():
         logging.closeLogFile(0)
 
     if shared.DEBUG:
-        print ('end of Main()', file=sys.stderr, flush=True)
+        print ('main: end of Main()', file=sys.stderr, flush=True)
 
 if __name__ == '__main__':
     Main()
