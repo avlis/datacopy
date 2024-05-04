@@ -129,92 +129,94 @@ def writeLogFile():
             continue
 
         #print(f'logwriter: received message [{logLevel}][{sMsg}]', file=sys.stderr, flush=True)
-        if logLevel == shared.L_INFO:
-            print(f'\n{str(datetime.now())}: {sMsg}', file=sys.stdout, flush=True)
-            if logFile:
+        match logLevel:
+            case shared.L_INFO:
+                print(f'\n{str(datetime.now())}: {sMsg}', file=sys.stdout, flush=True)
+                if logFile:
+                    try:
+                        print(f'{str(datetime.now())}: {sMsg}', file=logFile, flush=True)
+                    except Exception:
+                        pass
+                continue
+
+            case shared.L_DEBUG:
+                if shared.DEBUG:
+                    print(sMsg, file=sys.stderr, flush=True)
+                    continue
+
+            case shared.L_STATS:
+                if statsFile:
+                    try:
+                        print(sMsg, file=statsFile, flush=True)
+                    except Exception:
+                        pass
+                continue
+
+            case shared.L_DUMPCOLS:
+                dumpColNames = sMsg
+                continue
+
+            case shared.L_DUMPDATA:
+                if shared.DEBUG or shared.DUMP_ON_ERROR:
+                    try:
+                        dumpFile = open( f'{sLogFilePrefix}.DUMP', 'w', encoding = 'utf-8')
+                        dumper=csv.writer(dumpFile, delimiter = shared.DUMPFILE_SEP, quoting = csv.QUOTE_MINIMAL)
+                        dumper.writerow(dumpColNames)
+                        dumper.writerows(shared.encodeSpecialChars(sMsg))
+                        dumpFile.close()
+                    except Exception:
+                        pass
+                continue
+
+            case shared.L_OPEN:
                 try:
-                    print(f'{str(datetime.now())}: {sMsg}', file=logFile, flush=True)
-                except Exception:
-                    pass
-            continue
-
-        if logLevel == shared.L_DEBUG and shared.DEBUG:
-            print(sMsg, file=sys.stderr, flush=True)
-            continue
-
-        if logLevel == shared.L_STATS:
-            if statsFile:
+                    print(f'writeLogFile: opening [{sMsg}]', file=sys.stderr, flush=True)
+                    sLogFilePrefix = sMsg
+                    logFile = open( f'{sMsg}.running.log', 'a', encoding = 'utf-8')
+                except Exception as error:
+                    print(f'writeLogFile: could not open log file [{sMsg}]: [{error}]', file=sys.stderr, flush=True)
                 try:
-                    print(sMsg, file=statsFile, flush=True)
-                except Exception:
-                    pass
-            continue
+                    statsFile = open( f'{sMsg}.stats', 'a', encoding = 'utf-8')
+                except Exception as error:
+                    print(f'writeLogFile: could not open stats file [{sMsg}]: [{error}]', file=sys.stderr, flush=True)
+                continue
 
-        if logLevel == shared.L_DUMPCOLS:
-            dumpColNames = sMsg
-            continue
+            case shared.L_STREAM_START:
+                shared.idleSecsObserved.value = 0
+                rStart = timer()
+                if statsFile:
+                    try:
+                        print(shared.statsFormat.format(datetime.now().strftime('%Y%m%d%H%M%S.%f'), shared.executionID, 'streamStart', sMsg, 0, 0, shared.parallelReaders ), file=statsFile, flush=True)
+                    except Exception:
+                        pass
+                continue
 
-        if logLevel == shared.L_DUMPDATA:
-            if shared.DEBUG or shared.DUMP_ON_ERROR:
-                try:
-                    dumpFile = open( f'{sLogFilePrefix}.DUMP', 'w', encoding = 'utf-8')
-                    dumper=csv.writer(dumpFile, delimiter = shared.DUMPFILE_SEP, quoting = csv.QUOTE_MINIMAL)
-                    dumper.writerow(dumpColNames)
-                    dumper.writerows(shared.encodeSpecialChars(sMsg))
-                    dumpFile.close()
-                except Exception:
-                    pass
-            continue
+            case shared.L_STREAM_END:
+                if statsFile:
+                    try:
+                        print(shared.statsFormat.format(datetime.now().strftime('%Y%m%d%H%M%S.%f'), shared.executionID, 'streamEnd', sMsg, shared.idleSecsObserved.value, timer()-rStart, 0 ), file=statsFile, flush=True)
+                    except Exception:
+                        pass
+                continue
 
-        if logLevel == shared.L_OPEN:
-            try:
-                print(f'writeLogFile: opening [{sMsg}]', file=sys.stderr, flush=True)
-                sLogFilePrefix = sMsg
-                logFile = open( f'{sMsg}.running.log', 'a', encoding = 'utf-8')
-            except Exception as error:
-                print(f'writeLogFile: could not open log file [{sMsg}]: [{error}]', file=sys.stderr, flush=True)
-            try:
-                statsFile = open( f'{sMsg}.stats', 'a', encoding = 'utf-8')
-            except Exception as error:
-                print(f'writeLogFile: could not open stats file [{sMsg}]: [{error}]', file=sys.stderr, flush=True)
-            continue
+            case shared.L_CLOSE:
+                if logFile:
+                    logFile.close()
+                    logFile=None
+                    if shared.ErrorOccurred.value:
+                        sLogFileFinalName = f'{sLogFilePrefix}.ERROR.log'
+                    else:
+                        sLogFileFinalName = f'{sLogFilePrefix}.ok.log'
+                    try:
+                        os.rename(f'{sLogFilePrefix}.running.log', sLogFileFinalName)
+                    except Exception:
+                        pass
+                continue
 
-        if logLevel == shared.L_STREAM_START:
-            shared.idleSecsObserved.value = 0
-            rStart = timer()
-            if statsFile:
-                try:
-                    print(shared.statsFormat.format(datetime.now().strftime('%Y%m%d%H%M%S.%f'), shared.executionID, 'streamStart', sMsg, 0, 0, shared.parallelReaders ), file=statsFile, flush=True)
-                except Exception:
-                    pass
-            continue
-
-        if logLevel == shared.L_STREAM_END:
-            if statsFile:
-                try:
-                    print(shared.statsFormat.format(datetime.now().strftime('%Y%m%d%H%M%S.%f'), shared.executionID, 'streamEnd', sMsg, shared.idleSecsObserved.value, timer()-rStart, 0 ), file=statsFile, flush=True)
-                except Exception:
-                    pass
-            continue
-
-        if logLevel == shared.L_CLOSE:
-            if logFile:
-                logFile.close()
-                logFile=None
-                if shared.ErrorOccurred.value:
-                    sLogFileFinalName = f'{sLogFilePrefix}.ERROR.log'
-                else:
-                    sLogFileFinalName = f'{sLogFilePrefix}.ok.log'
-                try:
-                    os.rename(f'{sLogFilePrefix}.running.log', sLogFileFinalName)
-                except Exception:
-                    pass
-            continue
-
-        if logLevel == shared.L_END:
-            if shared.DEBUG:
-                print('writeLogFile: received stop message.', file=sys.stderr, flush=True)
-            bKeepGoing = False
+            case shared.L_END:
+                if shared.DEBUG:
+                    print('writeLogFile: received stop message.', file=sys.stderr, flush=True)
+                bKeepGoing = False
 
     if shared.DEBUG:
         print('writeLogFile: exiting...', file=sys.stderr, flush=True)

@@ -132,111 +132,113 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_preQuery:str = '',
         c = shared.connections[p_name]
 
     logging.logPrint(f'initConnections[{p_name}]: trying to connect...', shared.L_DEBUG)
-    if c['driver'] == 'pyodbc':
-        try:
-            import pyodbc
-            for x in range(p_qtd):
-                # parameters in string because if added as independent parameters, it segfaults
-                # used to be:
-                #nc[x]=pyodbc.connect(driver='{ODBC Driver 18 for SQL Server}', server=c['server'], database=c['database'], user=c['user'], password=c['password'], encoding = 'UTF-8', nencoding = 'UTF-8', readOnly = p_readOnly, trustservercertificate = c['trustservercertificate'] )
-                nc[x]=pyodbc.connect(f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={c['server']};DATABASE={{{c['database']}}};UID={{{c['user']}}};PWD={{{c['password']}}};ENCODING=UTF-8;TRUSTSERVERCERTIFICATE={c['trustservercertificate']}")
-        except (Exception, pyodbc.DatabaseError) as error:
-            logging.logPrint(f'initConnections({p_name}): DB error [{error}]')
-            shared.ErrorOccurred.value=True
-            logging.closeLogFile(2)
 
-    if c['driver'] == 'cx_Oracle':
-        try:
-            import cx_Oracle
-            for x in range(p_qtd):
-                nc[x]=cx_Oracle.connect(c['user'], c['password'], f"{c['server']}/{c['database']}", encoding = 'UTF-8', nencoding = 'UTF-8' )
-                nc[x].outputtypehandler = cx_Oracle_OutputTypeHandler
-        except Exception as error:
-            logging.logPrint(f'initConnections({p_name}): DB error [{error}]')
-            shared.ErrorOccurred.value=True
-            logging.closeLogFile(2)
-
-    if c['driver'] == 'psycopg2':
-        try:
-            from psycopg2 import pool as pgpools
-            tpool = pgpools.ThreadedConnectionPool(1, p_qtd, host=c['server'], database=c['database'], user=c['user'], password = c['password'])
-            for x in range(p_qtd):
-                nc[x] = tpool.getconn()
-                nc[x].readonly = p_readOnly
-        except Exception as error:
-            logging.logPrint(f'initConnections({p_name}): DB error [{error}]')
-            shared.ErrorOccurred.value=True
-            logging.closeLogFile(2)
-
-    if c['driver'] == 'mysql':
-        try:
-            import mysql.connector
-            for x in range(p_qtd):
-                nc[x]=mysql.connector.connect(host=c['server'], database=c['database'], user=c['user'], password = c['password'])
-        except Exception as error:
-            logging.logPrint(f'initConnections({p_name}): DB error [{error}]')
-            shared.ErrorOccurred.value=True
-            logging.closeLogFile(2)
-
-    if c['driver'] == 'mariadb':
-        try:
-            import mariadb
-            for x in range(p_qtd):
-                nc[x]=mariadb.connect(host=c['server'], database=c['database'], user=c['user'], password = c['password'])
-        except Exception as error:
-            logging.logPrint(f'initConnections({p_name}): DB error [{error}]')
-            shared.ErrorOccurred.value=True
-            logging.closeLogFile(2)
-
-    if c['driver'] == 'csv':
-        if 'paths' in c:
-            _paths=c['paths'].split('|')
-        else:
-            _paths = ('.') #pylint:disable=superfluous-parens
-
-        for _path in _paths:
-            if not os.path.isdir(_path):
-                logging.logPrint(f'initConnections({p_name}): directory does not exist [{_path}]')
+    match c['driver']:
+        case 'pyodbc':
+            try:
+                import pyodbc
+                for x in range(p_qtd):
+                    # parameters in string because if added as independent parameters, it segfaults
+                    # used to be:
+                    #nc[x]=pyodbc.connect(driver='{ODBC Driver 18 for SQL Server}', server=c['server'], database=c['database'], user=c['user'], password=c['password'], encoding = 'UTF-8', nencoding = 'UTF-8', readOnly = p_readOnly, trustservercertificate = c['trustservercertificate'] )
+                    nc[x]=pyodbc.connect(f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={c['server']};DATABASE={{{c['database']}}};UID={{{c['user']}}};PWD={{{c['password']}}};ENCODING=UTF-8;TRUSTSERVERCERTIFICATE={c['trustservercertificate']}")
+            except (Exception, pyodbc.DatabaseError) as error:
+                logging.logPrint(f'initConnections({p_name}): DB error [{error}]')
                 shared.ErrorOccurred.value=True
                 logging.closeLogFile(2)
 
-        sFileName = ''
-        logging.logPrint(f'initConnections({p_name}): dumping CSV files to {_paths}', shared.L_DEBUG)
-        try:
-            _delim=csv_delimiter_decoder[c['delimiter']]
-        except Exception:
-            if len(c['delimiter']) == 1:
-                _delim = c['delimiter']
-            else:
-                _delim = ','
-        try:
-            _quote=csv_quoting_decoder[c['quoting']]
-        except Exception:
-            _quote=csv.QUOTE_MINIMAL
-
-        csv.register_dialect(p_name, delimiter = _delim, quoting = _quote)
-        logging.logPrint(f'initConnections({p_name}): registering csv dialect with delim=[{_delim}], quoting=[{_quote}]', shared.L_DEBUG)
-        try:
-            if p_qtd > 1:
-                ipath=0
+        case 'cx_Oracle':
+            try:
+                import cx_Oracle
                 for x in range(p_qtd):
-                    sFileName = os.path.join(_paths[ipath], f'{p_tableName}_{x+1}.csv')
-                    if ipath<len(_paths)-1:
-                        ipath += 1
-                    else:
-                        ipath = 0
+                    nc[x]=cx_Oracle.connect(c['user'], c['password'], f"{c['server']}/{c['database']}", encoding = 'UTF-8', nencoding = 'UTF-8' )
+                    nc[x].outputtypehandler = cx_Oracle_OutputTypeHandler
+            except Exception as error:
+                logging.logPrint(f'initConnections({p_name}): DB error [{error}]')
+                shared.ErrorOccurred.value=True
+                logging.closeLogFile(2)
+
+        case 'psycopg2':
+            try:
+                from psycopg2 import pool as pgpools
+                tpool = pgpools.ThreadedConnectionPool(1, p_qtd, host=c['server'], database=c['database'], user=c['user'], password = c['password'])
+                for x in range(p_qtd):
+                    nc[x] = tpool.getconn()
+                    nc[x].readonly = p_readOnly
+            except Exception as error:
+                logging.logPrint(f'initConnections({p_name}): DB error [{error}]')
+                shared.ErrorOccurred.value=True
+                logging.closeLogFile(2)
+
+        case 'mysql':
+            try:
+                import mysql.connector
+                for x in range(p_qtd):
+                    nc[x]=mysql.connector.connect(host=c['server'], database=c['database'], user=c['user'], password = c['password'])
+            except Exception as error:
+                logging.logPrint(f'initConnections({p_name}): DB error [{error}]')
+                shared.ErrorOccurred.value=True
+                logging.closeLogFile(2)
+
+        case 'mariadb':
+            try:
+                import mariadb
+                for x in range(p_qtd):
+                    nc[x]=mariadb.connect(host=c['server'], database=c['database'], user=c['user'], password = c['password'])
+            except Exception as error:
+                logging.logPrint(f'initConnections({p_name}): DB error [{error}]')
+                shared.ErrorOccurred.value=True
+                logging.closeLogFile(2)
+
+        case 'csv':
+            if 'paths' in c:
+                _paths=c['paths'].split('|')
+            else:
+                _paths = ('.') #pylint:disable=superfluous-parens
+
+            for _path in _paths:
+                if not os.path.isdir(_path):
+                    logging.logPrint(f'initConnections({p_name}): directory does not exist [{_path}]')
+                    shared.ErrorOccurred.value=True
+                    logging.closeLogFile(2)
+
+            sFileName = ''
+            logging.logPrint(f'initConnections({p_name}): dumping CSV files to {_paths}', shared.L_DEBUG)
+            try:
+                _delim=csv_delimiter_decoder[c['delimiter']]
+            except Exception:
+                if len(c['delimiter']) == 1:
+                    _delim = c['delimiter']
+                else:
+                    _delim = ','
+            try:
+                _quote=csv_quoting_decoder[c['quoting']]
+            except Exception:
+                _quote=csv.QUOTE_MINIMAL
+
+            csv.register_dialect(p_name, delimiter = _delim, quoting = _quote)
+            logging.logPrint(f'initConnections({p_name}): registering csv dialect with delim=[{_delim}], quoting=[{_quote}]', shared.L_DEBUG)
+            try:
+                if p_qtd > 1:
+                    ipath=0
+                    for x in range(p_qtd):
+                        sFileName = os.path.join(_paths[ipath], f'{p_tableName}_{x+1}.csv')
+                        if ipath<len(_paths)-1:
+                            ipath += 1
+                        else:
+                            ipath = 0
+                        logging.logPrint(f'initConnections({p_name}): opening file=[{sFileName}], mode=[{p_mode}]', shared.L_DEBUG)
+                        newFile = open(sFileName, p_mode, encoding = 'utf-8')
+                        newStream = csv.writer(newFile, dialect = p_name)
+                        nc[x] = (newFile, newStream)
+                else:
+                    sFileName = os.path.join(_paths[0], f'{p_tableName}.csv')
                     logging.logPrint(f'initConnections({p_name}): opening file=[{sFileName}], mode=[{p_mode}]', shared.L_DEBUG)
                     newFile = open(sFileName, p_mode, encoding = 'utf-8')
                     newStream = csv.writer(newFile, dialect = p_name)
-                    nc[x] = (newFile, newStream)
-            else:
-                sFileName = os.path.join(_paths[0], f'{p_tableName}.csv')
-                logging.logPrint(f'initConnections({p_name}): opening file=[{sFileName}], mode=[{p_mode}]', shared.L_DEBUG)
-                newFile = open(sFileName, p_mode, encoding = 'utf-8')
-                newStream = csv.writer(newFile, dialect = p_name)
-                nc[0] = (newFile, newStream)
-        except Exception as error:
-            logging.logPrint(f'initConnections({p_name}): CSV error [{error}] opening file [{sFileName}]')
+                    nc[0] = (newFile, newStream)
+            except Exception as error:
+                logging.logPrint(f'initConnections({p_name}): CSV error [{error}] opening file [{sFileName}]')
 
     try:
         sGetVersion = check_bd_version_cmd[c['driver']]
