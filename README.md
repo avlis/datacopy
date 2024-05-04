@@ -122,7 +122,7 @@ or json mode:
 
 ### fields:
 - ts: timestamp of this event
-- execID: cam be used to group batches of datacopys, running as one big logical job. Useful if you run a couple of datacopys hourly, and send these stats to elasticsearch, for example.
+- execID: can be used to group batches of datacopys, running as one big logical job. Useful if you run a couple of datacopys hourly, and send these stats to elasticsearch, for example.
 - event: execQuery is about cursor.execute(), read is reads, write is writes, stream marks the beginings and ends of groups of jobs whitin this job file.  
 - jobID (concat of line number, source, destination, destination table name, from jobs.csv file)
 - recs: number of records read or written in this particular event. Only makes sense in *Ends.
