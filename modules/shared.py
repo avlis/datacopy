@@ -9,6 +9,7 @@ from datetime import datetime
 
 # Constants
 
+E_NOOP = 0
 E_QUERY = 1
 E_READ = 2
 E_WRITE = 4
@@ -80,7 +81,7 @@ else:
     statsFormat = '{0}\t{1}\t{2}\t{3}\t{4}\t{5:.2f}\t{6}'
 
 parallelReaders = int(os.getenv('PARALLEL_READERS','1'))
-parallelReadersLaunchInterval = float(os.getenv('PARALLEL_READERS_LAUNCH_INTERVAL','.5'))
+parallelReadersLaunchInterval = float(0.1)
 
 idleTimetoutSecs = int(os.getenv('IDLE_TIMEOUT_SECS','0'))
 

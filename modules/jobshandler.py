@@ -160,17 +160,16 @@ def copyData():
 
                     iIdleTimeout = 0
                     match eType:
-#shared.E_READ
                         case shared.E_READ:
                             iDataLinesRead[threadID] += recs
                             iTotalDataLinesRead += recs
                             iReadSecs[threadID] += secs
                             iTotalReadSecs += secs
-#shared.E_WRITE
+
                         case shared.E_WRITE:
                             iTotalDataLinesWritten += recs
                             iTotalWrittenSecs += secs
-#shared.E_BOOT_READER
+
                         case shared.E_BOOT_READER:
                             iDataLinesRead[threadID] = 0
                             iReadSecs[threadID] = .001
@@ -214,15 +213,15 @@ def copyData():
                                 shared.readP[threadID]=mp.Process(target=datahandlers.readData, args = (threadID, jobName, shared.GetConn[threadID], shared.GetData[threadID], fetchSize, query))
                             shared.readP[threadID].start()
                             iRunningReaders += 1
-#shared.E_QUERY_START
+
                         case shared.E_QUERY_START:
                             iRunningQueries += 1
                             logging.statsPrint('execQueryStart', threadName, 0, 0, iRunningQueries)
-#shared.E_QUERY_END
+
                         case shared.E_QUERY_END:
                             iRunningQueries -= 1
                             logging.statsPrint('execQueryEnd', threadName, 0, secs, iRunningQueries)
-#shared.E_READ_START
+
                         case shared.E_READ_START:
                             logging.logPrint(f'copyData({threadName}): received read start message', shared.L_DEBUG)
                             logging.statsPrint('readDataStart', threadName, 0, 0, iRunningReaders)
@@ -316,7 +315,7 @@ def copyData():
 
                                     writersNotStartedYet = False
                                     logging.statsPrint('writeDataStart', threadName, 0, 0, iRunningWriters)
-#shared.E_READ_END
+
                         case shared.E_READ_END:
                             iRunningReaders -= 1
                             logging.statsPrint('readDataEnd', threadName, iDataLinesRead[threadID], iReadSecs[threadID], iRunningReaders)
@@ -328,17 +327,21 @@ def copyData():
                                     shared.dataBuffer.put( (shared.seqnbr.value, shared.D_EOD, None), block = True )
                                     #print('pushed shared.seqnbr {0} (end)'.format(shared.seqnbr.value), file=sys.stderr, flush = True)
                                     shared.seqnbr.value += 1
-#shared.E_WRITE_START
+
                         case shared.E_WRITE_START:
                             pass
-#shared.E_WRITE_END
+
                         case shared.E_WRITE_END:
                             iRunningWriters -= 1
-#unknown?
+
+                        case shared.E_NOOP:
+                            #no operation. just to force the common part of event processing.
+                            pass
+
                         case _:
                             logging.logPrint(f'copyData({threadName}): unknown event in insert loop ({eType}), should not happen!')
 
-#nothing happended the last second, check idle timeout
+                #nothing happended the last second, check idle timeout
                 except queue.Empty:
                     iIdleTimeout += 1
                     shared.idleSecsObserved.value += 1
@@ -348,7 +351,7 @@ def copyData():
                         logging.statsPrint('IdleTimeoutError', jobName, 0, shared.idleTimetoutSecs, 0)
                         shared.ErrorOccurred.value = True
 
-#common part of event processing:
+                #common part of event processing:
                 iCurrentQueueSize = shared.dataBuffer.qsize()
 
                 if iCurrentQueueSize > shared.maxQueueLenObserved:

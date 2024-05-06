@@ -3,6 +3,8 @@
 #pylint: disable=invalid-name, broad-except, line-too-long
 
 from timeit import default_timer as timer
+from time import sleep
+
 import queue
 
 import setproctitle
@@ -77,6 +79,13 @@ def readData(p_jobID:int, p_jobName:str, p_connection, p_cursor, p_fetchSize:int
         p_connection.close()
     except Exception:
         pass
+
+
+    if shared.parallelReaders > 1:
+        #make sure that the next reader is started before we run the runningreaders to 0
+        # and the innerloop exits and we close writers
+        shared.eventStream.put( (shared.E_NOOP, p_jobID, p_jobName, None, None) )
+        sleep(.15)
 
     shared.eventStream.put( (shared.E_READ_END, p_jobID, p_jobName, None, None) )
     logging.logPrint(f'\nreadData({p_jobName}): Ended', shared.L_DEBUG)

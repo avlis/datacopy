@@ -22,7 +22,6 @@ the following env vars can be used to control it:
 - SCREEN_STATS_OUTPUT (default stderr, can be set to 'stdout')
 - DEBUG (default no, yes to get a lot of detail on stderr, and a DUMP of the block that fails on writes)
 - PARALLEL_READERS (default 1)
-- PARALLEL_READERS_LAUNCH_INTERVAL (default .5 second), can be used to override that behaviour. Beware that setting this to a higher interval may lead to multi-step jobs that merge to the same destination table to close and restart the writers, if the running jobs finish before this interval.
 - ADD_NAMES_DELIMITERS (default no, yes to add double quotes or backticks on table and column name; useful if someone used reserved words as table names... or spaces)
 - RUNAS_UID, GID: to create a regular, non privileged user to run the copy, and to create the log and stat files with the same user id and group id of a regular user on the host (instead of root). 
 - IDLE_TIMEOUT_SECS: by default, datacopy will wait forever. it can be thhe case that the sources will never finish processing the query, or the destination is locked and commits don't happen. in this situations, this setting can be used to give up. NOTE: does not apply to delete/truncate stage; it just kicks in after the data copy stage. It resets every time there is an event (packet received, packet wrote, query starts, query ends, etc)
