@@ -7,7 +7,9 @@ import sys
 import multiprocessing as mp
 from datetime import datetime
 
-# Constants
+
+#### Constants ##########################################################################
+
 
 E_NOOP = 0
 E_QUERY = 1
@@ -42,14 +44,6 @@ L_END = 255
 D_COD = 'C'
 D_EOD = '\x04'
 
-connections = {}
-queries = {}
-
-defaultFetchSize:int = 1024
-
-logFileName:str = ''
-readP = {}
-writeP = {}
 
 queueSize = int(os.getenv('QUEUE_SIZE','256'))
 usedQueueBeforeNew = int(queueSize/int(os.getenv('QUEUE_FB4NEWR','3')))
@@ -64,7 +58,6 @@ if os.getenv('SCREEN_STATS_OUTPUT','stderr') == 'stdout':
     screenStatsOutputFile = sys.stdout
 else:
     screenStatsOutputFile = sys.stderr
-
 
 stopJobsOnError:bool = bool(os.getenv('STOP_JOBS_ON_ERROR','yes') == 'yes')
 
@@ -85,21 +78,14 @@ parallelReadersLaunchInterval = float(0.1)
 
 idleTimetoutSecs = int(os.getenv('IDLE_TIMEOUT_SECS','0'))
 
-maxQueueLenObserved:int = 0
-maxQueueLenObservedEvents:int = 0
-idleSecsObserved = mp.Value('i', 0)
+defaultFetchSize:int = 1024
 
 
-#### SHARED OBJECTS
+#### Shared Variables, but changed in single thread contexts ############################
 
-dataBuffer = mp.Manager().Queue(queueSize)
-eventStream = mp.Manager().Queue()
-logStream = mp.Manager().Queue()
 
-seqnbr = mp.Value('i', 0)
-Working = mp.Value('b', True)
-ErrorOccurred =  mp.Value('b',False)
-
+connections = {}
+queries = {}
 
 PutConn = {}
 PutData = {}
@@ -108,6 +94,30 @@ GetConn2 = {}
 GetData = {}
 GetData2 = {}
 
+readP = {}
+writeP = {}
+
+logFileName:str = ''
+
+maxQueueLenObserved:int = 0
+maxQueueLenObservedEvents:int = 0
+
+
+#### OBJECTS shared / edited in multithreads  ###########################################
+
+
+dataBuffer = mp.Queue(queueSize)
+eventStream = mp.Queue()
+logStream = mp.Queue()
+
+seqnbr = mp.Value('i', 0)
+Working = mp.Value('b', True)
+ErrorOccurred =  mp.Value('b',False)
+
+idleSecsObserved = mp.Value('i', 0)
+
+
+#### Utilities ##########################################################################
 
 def encodeSpecialChars(p_in):
     '''convert special chars to escaped representation'''

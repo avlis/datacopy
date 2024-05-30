@@ -1,7 +1,7 @@
 FROM python:3-slim
-ARG base_version="base-20240501-001"
+ARG base_version="base-20240530-001"
 ARG oracle_major_version=21
-ARG oracle_minor_version=13
+ARG oracle_minor_version=14
 LABEL base_version=${base_version}
 ENV BASE_VERSION=${base_version}
 RUN echo "#!/bin/bash\nalias ll='ls -lah'\n\nexport BASE_VERSION=${BASE_VERSION}\nexport LD_LIBRARY_PATH=/opt/instantclient_${oracle_major_version}_${oracle_minor_version}" > /etc/profile.d/datacopy.sh ; chmod +x /etc/profile.d/datacopy.sh
