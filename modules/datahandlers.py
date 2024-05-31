@@ -20,7 +20,7 @@ def readData(p_jobID:int, p_jobName:str, p_connection, p_cursor, p_fetchSize:int
 
     if p_query:
         try:
-            setproctitle.setproctitle(f'datacopy: readData(query) [{p_jobName}]')
+            setproctitle.setproctitle(f'datacopy: readData (query) [{p_jobName}]')
             shared.eventStream.put( (shared.E_QUERY_START, p_jobID, p_jobName, 0, 0) )
             p_cursor.execute(p_query)
             shared.eventStream.put( (shared.E_QUERY_END, p_jobID, p_jobName, 0, (timer() - tStart)) )
@@ -29,7 +29,7 @@ def readData(p_jobID:int, p_jobName:str, p_connection, p_cursor, p_fetchSize:int
             logging.statsPrint('execError', p_jobName, 0, (timer() - tStart), 0)
             shared.ErrorOccurred.value = True
 
-    setproctitle.setproctitle(f'datacopy: readData [{p_jobName}]')
+    setproctitle.setproctitle(f'datacopy: readData (reading) [{p_jobName}]')
     if not shared.ErrorOccurred.value:
         #first read outside the loop, to get the col description without penalising the loop with ifs
         bData = False
@@ -45,7 +45,7 @@ def readData(p_jobID:int, p_jobName:str, p_connection, p_cursor, p_fetchSize:int
             shared.eventStream.put( (shared.E_READ_START, p_jobID, p_jobName, p_cursor.description, 0 ) )
             shared.eventStream.put( (shared.E_READ, p_jobID, p_jobName, len(bData), (timer()-rStart)) )
 
-            shared.dataBuffer.put( (shared.seqnbr.value, shared.D_COD, bData), block = True )
+            shared.dataBuffer.put( (shared.seqnbr.value, bData), block = True)
             #logging.logPrint(f'pushed shared.seqnbr {shared.seqnbr.value} (data)', shared.L_DEBUG)
             shared.seqnbr.value += 1
 
@@ -65,7 +65,7 @@ def readData(p_jobID:int, p_jobName:str, p_connection, p_cursor, p_fetchSize:int
 
             shared.eventStream.put( (shared.E_READ, p_jobID, p_jobName, len(bData), (timer()-rStart)) )
 
-            shared.dataBuffer.put( (shared.seqnbr.value, shared.D_COD, bData), block = True )
+            shared.dataBuffer.put( (shared.seqnbr.value, bData), block = True )
             #logging.logPrint(f'pushed shared.seqnbr {shared.seqnbr.value} (data)', shared.L_DEBUG)
             shared.seqnbr.value += 1
     else:
@@ -88,6 +88,7 @@ def readData(p_jobID:int, p_jobName:str, p_connection, p_cursor, p_fetchSize:int
         sleep(.15)
 
     shared.eventStream.put( (shared.E_READ_END, p_jobID, p_jobName, None, None) )
+    setproctitle.setproctitle(f'datacopy: readData (flushing) [{p_jobName}]')
     logging.logPrint(f'\nreadData({p_jobName}): Ended', shared.L_DEBUG)
 
 def readData2(p_jobID:int, p_jobName:str, p_connection, p_connection2, p_cursor, p_cursor2, p_fetchSize:int, p_query:str, p_query2:str):
@@ -100,7 +101,7 @@ def readData2(p_jobID:int, p_jobName:str, p_connection, p_connection2, p_cursor,
 
     if p_query:
         try:
-            setproctitle.setproctitle(f'datacopy: readData2(query) [{p_jobName}]')
+            setproctitle.setproctitle(f'datacopy: readData2 (query) [{p_jobName}]')
             shared.eventStream.put( (shared.E_QUERY_START, p_jobID, p_jobName, 0, 0) )
             p_cursor.execute(p_query)
             shared.eventStream.put( (shared.E_QUERY_END, p_jobID, p_jobName, 0, (timer() - tStart)) )
@@ -109,7 +110,7 @@ def readData2(p_jobID:int, p_jobName:str, p_connection, p_connection2, p_cursor,
             logging.statsPrint('execError', p_jobName, 0, (timer() - tStart), 1)
             shared.ErrorOccurred.value = True
 
-    setproctitle.setproctitle(f'datacopy: readData2 [{p_jobName}]')
+    setproctitle.setproctitle(f'datacopy: readData2 (reading) [{p_jobName}]')
     while shared.Working.value and not shared.ErrorOccurred.value:
         bData = False
         try:
@@ -166,7 +167,7 @@ def readData2(p_jobID:int, p_jobName:str, p_connection, p_connection2, p_cursor,
             break
         if len(new_bData) > 0:
             shared.eventStream.put( (shared.E_READ, p_jobID, p_jobName, len(new_bData), (timer()-rStart)) )
-            shared.dataBuffer.put( (shared.seqnbr.value, shared.D_COD, new_bData), block = True )
+            shared.dataBuffer.put( (shared.seqnbr.value, new_bData), block = True )
             #logging.logPrint(f'pushed shared.seqnbr {shared.seqnbr.value} (data)', shared.L_DEBUG)
             shared.seqnbr.value += 1
 
@@ -188,13 +189,13 @@ def readData2(p_jobID:int, p_jobName:str, p_connection, p_connection2, p_cursor,
         pass
 
     shared.eventStream.put( (shared.E_READ_END, p_jobID, p_jobName, None, None) )
+    setproctitle.setproctitle(f'datacopy: readData2 (flushing) [{p_jobName}]')
     logging.logPrint(f'\nreadData2({p_jobName}): Ended', shared.L_DEBUG)
 
 def writeData(p_jobID:int, p_jobName:str, p_thread:int, p_connection, p_cursor, p_iQuery:str = ''):
     '''writes data to destinations'''
 
     seqnbr = -1
-    FOD = 'X'
 
     setproctitle.setproctitle(f'datacopy: writeData [{p_jobName}]')
 
@@ -202,13 +203,13 @@ def writeData(p_jobID:int, p_jobName:str, p_thread:int, p_connection, p_cursor, 
     shared.eventStream.put( (shared.E_WRITE_START, p_jobID, p_jobName, None, None) )
     while shared.Working.value and not shared.ErrorOccurred.value:
         try:
-            seqnbr, FOD, bData = shared.dataBuffer.get( block=True, timeout = 1 )
+            seqnbr, bData = shared.dataBuffer.get( block=True, timeout = 1 )
             #logging.logPrint(f'writer[{p_jobName}:{p_thread}]: pulled shared.seqnbr {seqnbr}, queue size {shared.dataBuffer.qsize()}', shared.L_DEBUG)
         except queue.Empty:
+            if shared.stopWhenEmpty.value:
+                logging.logPrint(f"\nwriteData({p_jobName}:{p_thread}:{seqnbr}): end of data detected", shared.L_DEBUG)
+                break
             continue
-        if FOD == shared.D_EOD:
-            logging.logPrint(f"\nwriteData({p_jobName}:{p_thread}:{seqnbr}): 'no more data' message received", shared.L_DEBUG)
-            break
         iStart = timer()
         try:
             p_cursor.executemany(p_iQuery, bData)
@@ -247,7 +248,6 @@ def writeDataCSV(p_jobID:int, p_jobName:str, p_thread:int, p_conn, p_Header:str,
     setproctitle.setproctitle(f'datacopy: writeDataCSV [{p_jobName}]')
 
     seqnbr = -1
-    FOD = 'X'
 
     #p_conn is returned by initConnections as (file, stream)
     f_file, f_stream = p_conn
@@ -259,13 +259,13 @@ def writeDataCSV(p_jobID:int, p_jobName:str, p_thread:int, p_conn, p_Header:str,
 
     while shared.Working.value and not shared.ErrorOccurred.value:
         try:
-            seqnbr, FOD, bData = shared.dataBuffer.get( block=True, timeout = 1 )
+            seqnbr, bData = shared.dataBuffer.get( block=True, timeout = 1 )
             #logging.logPrint('writer[{0}:{1}]: pulled shared.seqnbr {2}, queue size {3}'.format(p_jobName, p_thread , seqnbr, shared.dataBuffer.qsize()), shared.L_DEBUG)
         except queue.Empty:
+            if shared.stopWhenEmpty.value:
+                logging.logPrint(f"\nwriteDataCSV({p_jobName}:{p_thread}:{seqnbr}): end of data detected", shared.L_DEBUG)
+                break
             continue
-        if FOD == shared.D_EOD:
-            logging.logPrint(f"\nwriteDataCSV({p_jobName}:{p_thread}:{seqnbr}): 'no more data' message received", shared.L_DEBUG)
-            break
         iStart = timer()
         try:
             if p_encodeSpecial:

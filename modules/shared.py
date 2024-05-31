@@ -41,9 +41,6 @@ L_CLOSE = 32
 L_STREAM_END = 32 + 4
 L_END = 255
 
-D_COD = 1
-D_EOD = 2
-
 
 queueSize = int(os.getenv('QUEUE_SIZE','256'))
 usedQueueBeforeNew = int(queueSize/int(os.getenv('QUEUE_FB4NEWR','3')))
@@ -106,13 +103,14 @@ maxQueueLenObservedEvents:int = 0
 #### OBJECTS shared / edited in multithreads  ###########################################
 
 
-dataBuffer = mp.Manager().Queue(queueSize)
-eventStream = mp.Manager().Queue()
-logStream = mp.Manager().Queue()
+dataBuffer = mp.Queue(queueSize)
+eventStream = mp.Queue()
+logStream = mp.Queue()
 
 seqnbr = mp.Value('i', 0)
 Working = mp.Value('b', True)
 ErrorOccurred =  mp.Value('b',False)
+stopWhenEmpty = mp.Value('b', False)
 
 idleSecsObserved = mp.Value('i', 0)
 

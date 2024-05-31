@@ -91,8 +91,9 @@ def Main():
     logging.logPrint(f'main: making sure all read threads are terminated [{len(shared.readP)}]...', shared.L_DEBUG)
     for i in shared.readP:
         try:
+            shared.readP[i].join(timeout=1)
             shared.readP[i].terminate()
-            shared.readP[i].join(timeout=3)
+            shared.readP[i].join(timeout=1)
         except Exception as error:
             logging.logPrint(f'main: error terminating read thread {i} ({sys.exc_info()[2].tb_lineno}): [{error}]', shared.L_DEBUG)
             continue
@@ -100,8 +101,9 @@ def Main():
     logging.logPrint(f'main: making sure all write threads are terminated [{len(shared.writeP)}]...', shared.L_DEBUG)
     for i in shared.writeP:
         try:
+            shared.readP[i].join(timeout=1)
             shared.writeP[i].terminate()
-            shared.writeP[i].join(timeout=3)
+            shared.writeP[i].join(timeout=1)
         except Exception as error:
             logging.logPrint(f'main: error terminating write thread {i} ({sys.exc_info()[2].tb_lineno}): [{error}]', shared.L_DEBUG)
             continue

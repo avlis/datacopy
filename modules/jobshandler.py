@@ -299,7 +299,7 @@ def copyData():
                                     logging.logPrint(f'copyData({threadName}): number of writers for this job: [{nbrParallelWriters}]')
 
                                     newWriteConns = connections.initConnections(dest, False, nbrParallelWriters, preQueryDst, table, sWriteFileMode)
-
+                                    shared.stopWhenEmpty.value = False
                                     for x in range(nbrParallelWriters):
                                         shared.PutConn[iWriters] = newWriteConns[x]
                                         if isinstance(newWriteConns[x], tuple):
@@ -323,16 +323,14 @@ def copyData():
 
                             if iRunningReaders == 0 and bCloseStream:
                                 logging.logPrint(f'copyData({threadName}): signaling the end of data for this stream.')
-                                for x in range(nbrParallelWriters):
-                                    shared.dataBuffer.put( (shared.seqnbr.value, shared.D_EOD, None), block = True )
-                                    #print('pushed shared.seqnbr {0} (end)'.format(shared.seqnbr.value), file=sys.stderr, flush = True)
-                                    shared.seqnbr.value += 1
+                                shared.stopWhenEmpty.value = True
 
                         case shared.E_WRITE_START:
                             pass
 
                         case shared.E_WRITE_END:
                             iRunningWriters -= 1
+                            shared.writeP[threadID].join(1)
 
                         case shared.E_NOOP:
                             #no operation. just to force the common part of event processing.
@@ -377,13 +375,13 @@ def copyData():
 
             if shared.ErrorOccurred.value:
                 #clean up any remaining data
+                shared.stopWhenEmpty.value = True
                 while True:
                     try:
-                        dummy=shared.dataBuffer.get(block = True, timeout = 1 )
+                        dummy = shared.dataBuffer.get(block = True, timeout = 1 )
                     except queue.Empty:
                         break
-                for x in range(nbrParallelWriters):
-                    shared.dataBuffer.put( (-3, shared.D_EOD, None) )
+
 
             print('\n', file=sys.stdout, flush = True)
             logging.logPrint(f'copyData({jobName}): {iTotalDataLinesWritten:,} rows copied in {iTotalWrittenSecs:,.2f} seconds ({(iTotalDataLinesWritten/iTotalWrittenSecs):,.2f}/sec).')
