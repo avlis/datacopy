@@ -41,8 +41,8 @@ L_CLOSE = 32
 L_STREAM_END = 32 + 4
 L_END = 255
 
-D_COD = 'C'
-D_EOD = '\x04'
+D_COD = 1
+D_EOD = 2
 
 
 queueSize = int(os.getenv('QUEUE_SIZE','256'))
@@ -106,9 +106,9 @@ maxQueueLenObservedEvents:int = 0
 #### OBJECTS shared / edited in multithreads  ###########################################
 
 
-dataBuffer = mp.Queue(queueSize)
-eventStream = mp.Queue()
-logStream = mp.Queue()
+dataBuffer = mp.Manager().Queue(queueSize)
+eventStream = mp.Manager().Queue()
+logStream = mp.Manager().Queue()
 
 seqnbr = mp.Value('i', 0)
 Working = mp.Value('b', True)
