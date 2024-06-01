@@ -83,8 +83,9 @@ def closeLogFile(p_exitCode = None):
             print('closeLogFile: making sure log thread is terminated...', file=sys.stderr, flush=True)
 
         try:
+            logThread.join(timeout=1)
             logThread.terminate()
-            logThread.join(timeout=5)
+            logThread.join(timeout=1)
 
         except Exception as error:
             print(f'closeLogFile: error terminating log thread ({sys.exc_info()[2].tb_lineno}): [{error}]', file=sys.stderr, flush=True)

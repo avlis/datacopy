@@ -319,7 +319,10 @@ def copyData():
                         case shared.E_READ_END:
                             iRunningReaders -= 1
                             logging.statsPrint('readDataEnd', threadName, iDataLinesRead[threadID], iReadSecs[threadID], iRunningReaders)
-                            shared.readP[threadID].join(1)
+                            try:
+                                shared.readP[threadID].join(timeout=1)
+                            except:
+                                pass
 
                             if iRunningReaders == 0 and bCloseStream:
                                 logging.logPrint(f'copyData({threadName}): signaling the end of data for this stream.')
@@ -330,7 +333,10 @@ def copyData():
 
                         case shared.E_WRITE_END:
                             iRunningWriters -= 1
-                            shared.writeP[threadID].join(1)
+                            try:
+                                shared.writeP[threadID].join(timeout=1)
+                            except:
+                                pass
 
                         case shared.E_NOOP:
                             #no operation. just to force the common part of event processing.
