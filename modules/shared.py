@@ -39,6 +39,7 @@ L_OPEN = 16
 L_STREAM_START = 16 + 4
 L_CLOSE = 32
 L_STREAM_END = 32 + 4
+L_STATSONPROCNAME = 64
 L_END = 255
 
 
@@ -60,7 +61,7 @@ stopJobsOnError:bool = bool(os.getenv('STOP_JOBS_ON_ERROR','yes') == 'yes')
 
 DEBUG:bool = bool(os.getenv('DEBUG','no') == 'yes')
 
-DUMP_ON_ERROR:str = bool(os.getenv('DUMP_ON_ERROR','no') == 'yes')
+DUMP_ON_ERROR:bool = bool(os.getenv('DUMP_ON_ERROR','no') == 'yes')
 DUMPFILE_SEP:str = os.getenv('DUMPFILE_SEP','|')
 
 executionID:str = os.getenv('EXECUTION_ID',datetime.now().strftime('%Y%m%d%H%M%S.%f'))

@@ -131,6 +131,9 @@ def writeLogFile():
 
         #print(f'logwriter: received message [{logLevel}][{sMsg}]', file=sys.stderr, flush=True)
         match logLevel:
+            case shared.L_STATSONPROCNAME:
+                setproctitle.setproctitle(f'datacopy: log writer [{sMsg}]')
+                continue
             case shared.L_INFO:
                 print(f'\n{str(datetime.now())}: {sMsg}', file=sys.stdout, flush=True)
                 if logFile:
