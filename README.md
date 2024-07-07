@@ -82,6 +82,19 @@ See other sample-* files to have an idea of configuration.
 - append_query: if for some reason, the value to be used as a bigger than filter needs a more complicated filter (or comes from a different table), you can customise the select statement. it should return only one row and one column. same rules as query applies: it can be a query on the jobs file, or it can be prefixed with an @ to point to a file.
 - append_source: if for some reason it needs to come from a connection that is not the destination, it can be overriden with this column.
 
+## includes
+it is now possible to combine multiple sql files to ease management of a complex set of queries.
+if the sql file has a line that starts with #include(space), that other file is read into that point of the buffer.
+It's recursive, so you can build a tree of includes. It does not have any kind of recursion protection, so it it ends up on a loop... boom.
+
+example: content of a file called sql/main_sql_file.sql:
+
+```
+#include sql/parts/file_with_select.sql
+#include sql/parts/file_with_from.sql
+#include sql/parts/file_with_where.sql
+```
+
 ## stats
 a .stats file is created on the same folder as the log file. can be a csv (tab delimited) or in json format.
 

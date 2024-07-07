@@ -10,7 +10,6 @@ import modules.logging as logging
 import modules.shared as shared
 
 
-
 expected_conns_columns_db = ('name','driver','server','database','user','password')
 expected_conns_columns_csv = ('name','driver','paths','delimiter','quoting')
 
@@ -123,7 +122,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_preQuery:str = '',
     '''creates connection objects to sources or destinations
 
     returns an array of connections, if connecting to databases, or an array of tupples of (file, stream), if driver == csv
-    
+
     '''
 
     nc = {}
@@ -131,7 +130,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_preQuery:str = '',
     if p_name in shared.connections:
         c = shared.connections[p_name]
 
-    logging.logPrint(f'initConnections[{p_name}]: trying to connect...', shared.L_DEBUG)
+    logging.logPrint(f'[{p_name}]: trying to connect...', shared.L_DEBUG)
 
     match c['driver']:
         case 'pyodbc':
@@ -203,7 +202,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_preQuery:str = '',
                     logging.closeLogFile(2)
 
             sFileName = ''
-            logging.logPrint(f'initConnections({p_name}): dumping CSV files to {_paths}', shared.L_DEBUG)
+            logging.logPrint(f'({p_name}): dumping CSV files to {_paths}', shared.L_DEBUG)
             try:
                 _delim=csv_delimiter_decoder[c['delimiter']]
             except Exception:
@@ -217,7 +216,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_preQuery:str = '',
                 _quote=csv.QUOTE_MINIMAL
 
             csv.register_dialect(p_name, delimiter = _delim, quoting = _quote)
-            logging.logPrint(f'initConnections({p_name}): registering csv dialect with delim=[{_delim}], quoting=[{_quote}]', shared.L_DEBUG)
+            logging.logPrint(f'({p_name}): registering csv dialect with delim=[{_delim}], quoting=[{_quote}]', shared.L_DEBUG)
             try:
                 if p_qtd > 1:
                     ipath=0
@@ -227,13 +226,13 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_preQuery:str = '',
                             ipath += 1
                         else:
                             ipath = 0
-                        logging.logPrint(f'initConnections({p_name}): opening file=[{sFileName}], mode=[{p_mode}]', shared.L_DEBUG)
+                        logging.logPrint(f'({p_name}): opening file=[{sFileName}], mode=[{p_mode}]', shared.L_DEBUG)
                         newFile = open(sFileName, p_mode, encoding = 'utf-8')
                         newStream = csv.writer(newFile, dialect = p_name)
                         nc[x] = (newFile, newStream)
                 else:
                     sFileName = os.path.join(_paths[0], f'{p_tableName}.csv')
-                    logging.logPrint(f'initConnections({p_name}): opening file=[{sFileName}], mode=[{p_mode}]', shared.L_DEBUG)
+                    logging.logPrint(f'({p_name}): opening file=[{sFileName}], mode=[{p_mode}]', shared.L_DEBUG)
                     newFile = open(sFileName, p_mode, encoding = 'utf-8')
                     newStream = csv.writer(newFile, dialect = p_name)
                     nc[0] = (newFile, newStream)
@@ -244,10 +243,10 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_preQuery:str = '',
         sGetVersion = check_bd_version_cmd[c['driver']]
         if sGetVersion != '':
             cur = nc[0].cursor()
-            logging.logPrint(f'initConnections({p_name}): Testing connection, getting version with [{sGetVersion}]...', shared.L_DEBUG)
+            logging.logPrint(f'({p_name}): Testing connection, getting version with [{sGetVersion}]...', shared.L_DEBUG)
             cur.execute(sGetVersion)
             db_version = cur.fetchone()
-            logging.logPrint(f'initConnections({p_name}): ok, connected to DB version: {db_version}', shared.L_DEBUG)
+            logging.logPrint(f'({p_name}): ok, connected to DB version: {db_version}', shared.L_DEBUG)
             logging.logPrint(f'initConnections({p_name}): connected')
             cur.close()
     except Exception as error:
@@ -260,7 +259,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_preQuery:str = '',
         for i in nc:
             pc = nc[i].cursor()
             try:
-                logging.logPrint(f'initConnections({p_name}): executing pre_query [{p_preQuery}]', shared.L_DEBUG)
+                logging.logPrint(f'({p_name}): executing pre_query [{p_preQuery}]', shared.L_DEBUG)
                 pc.execute(p_preQuery)
             except Exception as error:
                 logging.logPrint(f'initConnections({p_name}): error executing pre_query [{p_preQuery}] [{error}]')

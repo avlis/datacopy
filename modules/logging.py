@@ -1,6 +1,6 @@
 '''log and stats stuff'''
 
-#pylint: disable=invalid-name, broad-except, line-too-long
+#pylint: disable=invalid-name, broad-except, bare-except, line-too-long
 import os
 import sys
 from datetime import datetime
@@ -10,17 +10,39 @@ import multiprocessing as mp
 import signal
 import queue
 import csv
+import inspect
+
 import setproctitle
 
 import modules.shared as shared
 
 logThread = None
 
-def logPrint(p_Message:str, p_logLevel:int=1):
+def logPrint(p_Message:str, p_logLevel:int=shared.L_INFO):
     ''' sends message to the queue that manages logging'''
     #if shared.DEBUG:
     #    print(f'logPrint: adding message to the log queue [{p_logLevel}][{p_Message}]', file=sys.stderr, flush=True)
-    shared.logStream.put((p_logLevel, p_Message))
+    match p_logLevel:
+        case shared.L_DEBUG:
+            if not shared.DEBUG:
+                return
+            modName = '<unknown>'
+            funcName = '<unknown>'
+            nl = ''
+            if p_Message.startswith('\n'):
+                nl = '\n'
+                p_Message = p_Message[1:]
+            try:
+                funcName = inspect.stack()[1].function
+                modName = inspect.getmodule(inspect.stack()[1][0]).__name__ # type: ignore
+            except:
+                pass
+            shared.logStream.put((p_logLevel, f'{nl}{modName}.{funcName}: {p_Message}'), block=True, timeout=shared.idleTimetoutSecs)
+        case shared.L_STATSONPROCNAME:
+            shared.logStream.put((p_logLevel, p_Message), block=True, timeout=shared.idleTimetoutSecs)
+        case _:
+            shared.logStream.put((p_logLevel, p_Message))
+
 
 def statsPrint(p_type:str, p_jobName:str, p_recs:int, p_secs:float, p_threads:int):
     '''sends stat messages to the log queue'''
@@ -39,6 +61,7 @@ def openLogFile(p_dest:str, p_table:str):
         sLogFilePrefix = f'{shared.logFileName}'
 
     shared.logStream.put( (shared.L_OPEN, sLogFilePrefix) )
+
 
 def closeLogFile(p_exitCode = None):
     '''makes sure the log file is properly handled.'''
@@ -97,6 +120,7 @@ def closeLogFile(p_exitCode = None):
             print(f'closeLogFile: exiting with exitcode [{p_exitCode}]', file=sys.stderr, flush=True)
         sys.exit(p_exitCode)
 
+
 def writeLogFile():
     '''processes messages on the log queue and sends them to file, stdout, stderr acordingly'''
 
@@ -107,7 +131,6 @@ def writeLogFile():
 
     setproctitle.setproctitle('datacopy: log writer')
 
-
     logFile = None
     statsFile = None
     dumpColNames = None
@@ -117,7 +140,7 @@ def writeLogFile():
     bKeepGoing=True
     while bKeepGoing:
         try:
-            (logLevel, sMsg) = shared.logStream.get( block=True, timeout = 1 )
+            (msgLogLevel, sMsg) = shared.logStream.get( block=True, timeout = 1 )
         except queue.Empty:
             continue
         except OSError:
@@ -129,8 +152,8 @@ def writeLogFile():
                 print(f'writeLogFile: Exception at line ({sys.exc_info()[2].tb_lineno}): [{error}]', file=sys.stderr, flush=True)
             continue
 
-        #print(f'logwriter: received message [{logLevel}][{sMsg}]', file=sys.stderr, flush=True)
-        match logLevel:
+        #print(f'logwriter: received message [{msgLogLevel}][{sMsg}]', file=sys.stderr, flush=True)
+        match msgLogLevel:
             case shared.L_STATSONPROCNAME:
                 setproctitle.setproctitle(f'datacopy: log writer [{sMsg}]')
                 continue
@@ -144,9 +167,8 @@ def writeLogFile():
                 continue
 
             case shared.L_DEBUG:
-                if shared.DEBUG:
-                    print(sMsg, file=sys.stderr, flush=True)
-                    continue
+                print(sMsg, file=sys.stderr, flush=True)
+                continue
 
             case shared.L_STATS:
                 if statsFile:

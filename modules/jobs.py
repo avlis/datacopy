@@ -23,6 +23,18 @@ def loadJobs(p_filename:str):
         logging.logPrint(f'error Loading [{p_filename}]: [{error}]')
         logging.closeLogFile(3)
 
+def preCheckSqlFile(p_filename:str, p_errorTitle:str):
+    '''checks that a sql file exists, considering #include directives, and is not empty'''
+    logging.logPrint(f'checking {p_errorTitle} file [{p_filename}]...', shared.L_DEBUG)
+    if not os.path.isfile(p_filename):
+        logging.logPrint(f'ERROR: query file [{p_filename}] does not exist! giving up.')
+        logging.closeLogFile(4)
+    else:
+        buffer = readSqlFile(p_filename)
+        if len(buffer) == 0:
+            logging.logPrint(f'ERROR: {p_errorTitle} file [{p_filename}] is empty! giving up.')
+            logging.closeLogFile(4)
+
 def preCheck():
     '''checks that config files are consistent'''
 
@@ -81,29 +93,21 @@ def preCheck():
                 logging.closeLogFile(4)
 
         if query[0] == '@':
-            if not os.path.isfile(query[1:]):
-                logging.logPrint(f'ERROR: query file [{query[1:]}] does not exist! giving up.')
-                logging.closeLogFile(4)
+            preCheckSqlFile(query[1:], 'query')
 
         if query2 != '':
             if query2[0] == '@':
-                if not os.path.isfile(query[1:]):
-                    logging.logPrint(f'ERROR: sub-query file [{query2[1:]}] does not exist! giving up.')
-                    logging.closeLogFile(4)
+                preCheckSqlFile(query2[1:], 'sub-query')
 
         if 'pre_query_src' in shared.queries:
             preQuerySrc = shared.queries['pre_query_src'][i]
             if preQuerySrc[0] == '@':
-                if not os.path.isfile(preQuerySrc[1:]):
-                    logging.logPrint(f'ERROR: pre query file [{preQuerySrc[1:]}] does not exist! giving up.')
-                    logging.closeLogFile(4)
+                preCheckSqlFile(preQuerySrc[1:], 'pre-query on source')
 
         if 'pre_query_dst' in shared.queries:
             preQueryDst = shared.queries['pre_query_dst'][i]
             if preQueryDst[0] == '@':
-                if not os.path.isfile(preQueryDst[1:]):
-                    logging.logPrint(f'ERROR: pre query file [{preQueryDst[1:]}] does not exist! giving up.')
-                    logging.closeLogFile(4)
+                preCheckSqlFile(preQueryDst[1:], 'pre-query on destination')
 
         if 'regexes' in shared.queries:
             regex = shared.queries['regexes'][i]
@@ -130,7 +134,31 @@ def preCheck():
                     logging.logPrint(f'ERROR: append query file [{apQuery[1:]}] does not exist! giving up.')
                     logging.closeLogFile(4)
 
-def prepQuery(p_index):
+def readSqlFile(p_filename:str, p_parentFilename:str = '') -> str:
+    '''Reads a SQL file, handling #include directives.'''
+    logging.logPrint(f'reading file [{p_filename}] (ref from [{p_parentFilename}])', shared.L_DEBUG)
+    buffer = ''
+    try:
+        with open(p_filename, 'r', encoding = 'utf-8') as file:
+            for line in file:
+                if line.startswith('#include '):
+                    # Extract the filename from the #include directive
+                    include_filename = line[9:].strip()
+                    # Recursively call readSqlFile to read the included file
+                    buffer += readSqlFile(include_filename, p_filename)
+                else:
+                    # Append the current line to the buffer
+                    buffer += line
+        return buffer
+    except Exception as error:
+        if p_parentFilename == '':
+            logging.logPrint(f'ERROR: error trying to read sql file [{p_filename}]: [{error}]')
+        else:
+            logging.logPrint(f'ERROR: error trying to read sql file [{p_filename}] mentioned in [{p_parentFilename}]: [{error}]')
+        logging.closeLogFile(4)
+
+
+def prepQuery(p_index:int) -> tuple:
     '''prepares the job step'''
 
     bCloseStream = None
@@ -155,24 +183,20 @@ def prepQuery(p_index):
     siObjSep = connections.getConnectionParameter(dest, 'insert_object_delimiter')
 
     if query[0] == '@':
-        with open(query[1:], 'r', encoding = 'utf-8') as file:
-            query = file.read()
+        query = readSqlFile(query[1:])
     if query2 != '':
         if query2[0] == '@':
-            with open(query2[1:], 'r', encoding = 'utf-8') as file:
-                query2 = file.read()
+            query2 = readSqlFile(query2[1:])
 
     if 'pre_query_src' in shared.queries:
         preQuerySrc = shared.queries['pre_query_src'][p_index]
         if preQuerySrc[0]  == '@':
-            with open(preQuerySrc[1:], 'r', encoding = 'utf-8') as file:
-                preQuerySrc = file.read()
+            preQuerySrc = readSqlFile(preQuerySrc[1:])
 
     if 'pre_query_dst' in shared.queries:
         preQueryDst = shared.queries['pre_query_dst'][p_index]
         if preQueryDst[0]  == '@':
-            with open(preQueryDst[1:], 'r', encoding = 'utf-8') as file:
-                preQueryDst = file.read()
+            preQueryDst = readSqlFile(preQueryDst[1:])
 
     if 'regexes' in shared.queries:
         regexes = shared.queries['regexes'][p_index]
@@ -249,5 +273,5 @@ def prepQuery(p_index):
     else:
         bCloseStream = True
 
-    logging.logPrint(f'prepQuery({qIndex}): source=[{source}], source2=[{source2}], dest=[{dest}], table=[{table}] closeStream=[{bCloseStream}], CSVEncodeSpecial=[{bCSVEncodeSpecial}], appendKeyColumn=[{appendKeyColumn}], getMaxQuery=[{getMaxQuery}]', shared.L_DEBUG)
+    logging.logPrint(f'({qIndex}): source=[{source}], source2=[{source2}], dest=[{dest}], table=[{table}] closeStream=[{bCloseStream}], CSVEncodeSpecial=[{bCSVEncodeSpecial}], appendKeyColumn=[{appendKeyColumn}], getMaxQuery=[{getMaxQuery}]', shared.L_DEBUG)
     return (source, source2, dest, mode, preQuerySrc, preQueryDst, query, query2, table, fetchSize, nbrParallelWriters, bCloseStream, bCSVEncodeSpecial, appendKeyColumn, getMaxQuery, getMaxDest)

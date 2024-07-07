@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# pylint: disable=invalid-name, wrong-import-position, line-too-long, broad-exception-caught
+# pylint: disable=invalid-name, wrong-import-position, line-too-long, broad-exception-caught, bare-except
 
 '''
 script to copy loads of data between databases
@@ -52,6 +52,18 @@ def sig_handler(signum, frame):
         shared.ErrorOccurred.value = True
         shared.Working.value = False
 
+def printSharedVariables():
+    '''prints shared variables'''
+    variables = dir(shared)
+
+    for variable in variables:
+        try:
+            value = getattr(shared, variable)
+            if isinstance(value, (int, bool, str)) and variable[1:2] != '_':
+                print(f'{variable}: {value}', file=sys.stderr, flush=True)
+        except:
+            continue
+
 # MAIN
 def Main():
     '''entry point'''
@@ -76,6 +88,10 @@ def Main():
 
     setproctitle.setproctitle(f'datacopy: main thread [{q_filename}]')
 
+    if shared.DEBUG:
+        print ('start of Main()', file=sys.stderr, flush=True)
+        printSharedVariables()
+
     logging.logThread = mp.Process(target=logging.writeLogFile)
     logging.logThread.start()
 
@@ -85,31 +101,30 @@ def Main():
     jobs.preCheck()
     jobshandler.copyData()
 
-    logging.logPrint('main: exited copydata!', shared.L_DEBUG)
+    logging.logPrint('exited copydata!', shared.L_DEBUG)
 
     #pylint: disable=consider-using-dict-items
-    logging.logPrint(f'main: making sure all read threads are terminated [{len(shared.readP)}]...', shared.L_DEBUG)
+    logging.logPrint(f'making sure all read threads are terminated [{len(shared.readP)}]...', shared.L_DEBUG)
     for i in shared.readP:
         try:
             shared.readP[i].join(timeout=1)
             shared.readP[i].terminate()
             shared.readP[i].join(timeout=1)
         except Exception as error:
-            logging.logPrint(f'main: error terminating read thread {i} ({sys.exc_info()[2].tb_lineno}): [{error}]', shared.L_DEBUG)
+            logging.logPrint(f'error terminating read thread {i} ({sys.exc_info()[2].tb_lineno}): [{error}]', shared.L_DEBUG)
             continue
 
-    logging.logPrint(f'main: making sure all write threads are terminated [{len(shared.writeP)}]...', shared.L_DEBUG)
+    logging.logPrint(f'making sure all write threads are terminated [{len(shared.writeP)}]...', shared.L_DEBUG)
     for i in shared.writeP:
         try:
             shared.readP[i].join(timeout=1)
             shared.writeP[i].terminate()
             shared.writeP[i].join(timeout=1)
         except Exception as error:
-            logging.logPrint(f'main: error terminating write thread {i} ({sys.exc_info()[2].tb_lineno}): [{error}]', shared.L_DEBUG)
+            logging.logPrint(f'error terminating write thread {i} ({sys.exc_info()[2].tb_lineno}): [{error}]', shared.L_DEBUG)
             continue
 
-    logging.logPrint('main: all worker threads terminated and joined.', shared.L_DEBUG)
-
+    logging.logPrint('all worker threads terminated and joined.', shared.L_DEBUG)
 
     if shared.ErrorOccurred.value:
         logging.closeLogFile(6)
@@ -118,7 +133,7 @@ def Main():
         logging.closeLogFile(0)
 
     if shared.DEBUG:
-        print ('main: end of Main()', file=sys.stderr, flush=True)
+        print ('end of Main()', file=sys.stderr, flush=True)
 
 if __name__ == '__main__':
     Main()

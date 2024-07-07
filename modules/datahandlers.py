@@ -15,7 +15,7 @@ import modules.logging as logging
 def readData(p_jobID:int, p_jobName:str, p_connection, p_cursor, p_fetchSize:int, p_query:str):
     '''gets data from sources'''
 
-    logging.logPrint(f'\nreadData({p_jobName}): Started, with cursor=[{id(p_cursor)}]', shared.L_DEBUG)
+    logging.logPrint(f'\n({p_jobName}): Started, with cursor=[{id(p_cursor)}]', shared.L_DEBUG)
     tStart = timer()
 
     if p_query:
@@ -45,9 +45,7 @@ def readData(p_jobID:int, p_jobName:str, p_connection, p_cursor, p_fetchSize:int
             shared.eventStream.put( (shared.E_READ_START, p_jobID, p_jobName, p_cursor.description, 0 ) )
             shared.eventStream.put( (shared.E_READ, p_jobID, p_jobName, len(bData), (timer()-rStart)) )
 
-            shared.dataBuffer.put( (shared.seqnbr.value, bData), block = True)
-            #logging.logPrint(f'pushed shared.seqnbr {shared.seqnbr.value} (data)', shared.L_DEBUG)
-            shared.seqnbr.value += 1
+            shared.dataBuffer.put( bData, block = True)
 
     if not shared.testQueries:
         while shared.Working.value and not shared.ErrorOccurred.value:
@@ -65,11 +63,10 @@ def readData(p_jobID:int, p_jobName:str, p_connection, p_cursor, p_fetchSize:int
 
             shared.eventStream.put( (shared.E_READ, p_jobID, p_jobName, len(bData), (timer()-rStart)) )
 
-            shared.dataBuffer.put( (shared.seqnbr.value, bData), block = True )
-            #logging.logPrint(f'pushed shared.seqnbr {shared.seqnbr.value} (data)', shared.L_DEBUG)
-            shared.seqnbr.value += 1
+            shared.dataBuffer.put( bData, block = True )
+
     else:
-        logging.logPrint(f'\nreadData({p_jobName}): testing queries mode, stopping read.', shared.L_DEBUG)
+        logging.logPrint(f'\n({p_jobName}): testing queries mode, stopping read.', shared.L_DEBUG)
 
     try:
         p_cursor.close()
@@ -89,12 +86,12 @@ def readData(p_jobID:int, p_jobName:str, p_connection, p_cursor, p_fetchSize:int
 
     shared.eventStream.put( (shared.E_READ_END, p_jobID, p_jobName, None, None) )
     setproctitle.setproctitle(f'datacopy: readData (flushing) [{p_jobName}]')
-    logging.logPrint(f'\nreadData({p_jobName}): Ended', shared.L_DEBUG)
+    logging.logPrint(f'\n({p_jobName}): Ended', shared.L_DEBUG)
 
 def readData2(p_jobID:int, p_jobName:str, p_connection, p_connection2, p_cursor, p_cursor2, p_fetchSize:int, p_query:str, p_query2:str):
     '''gets data from sources, sublooping for keys'''
 
-    logging.logPrint(f'\nreadData2({p_jobName}): Started, with cursor2=[{id(p_cursor2)}]', shared.L_DEBUG)
+    logging.logPrint(f'\n({p_jobName}): Started, with cursor2=[{id(p_cursor2)}]', shared.L_DEBUG)
 
     tStart = timer()
     bColsNotSentYet = True
@@ -145,7 +142,7 @@ def readData2(p_jobID:int, p_jobName:str, p_connection, p_connection2, p_cursor,
                     if bColsNotSentYet:
                         shared.eventStream.put( (shared.E_READ_START, p_jobID, p_jobName, p_cursor2.description, 0 ) )
                         if shared.testQueries:
-                            logging.logPrint(f'\nreadData({p_jobName}): testing queries mode, stopping read.', shared.L_DEBUG)
+                            logging.logPrint(f'\n({p_jobName}): testing queries mode, stopping read.', shared.L_DEBUG)
                             break
                         bColsNotSentYet = False
                 except Exception as error:
@@ -167,9 +164,7 @@ def readData2(p_jobID:int, p_jobName:str, p_connection, p_connection2, p_cursor,
             break
         if len(new_bData) > 0:
             shared.eventStream.put( (shared.E_READ, p_jobID, p_jobName, len(new_bData), (timer()-rStart)) )
-            shared.dataBuffer.put( (shared.seqnbr.value, new_bData), block = True )
-            #logging.logPrint(f'pushed shared.seqnbr {shared.seqnbr.value} (data)', shared.L_DEBUG)
-            shared.seqnbr.value += 1
+            shared.dataBuffer.put( new_bData, block = True )
 
     try:
         p_cursor.close()
@@ -190,24 +185,21 @@ def readData2(p_jobID:int, p_jobName:str, p_connection, p_connection2, p_cursor,
 
     shared.eventStream.put( (shared.E_READ_END, p_jobID, p_jobName, None, None) )
     setproctitle.setproctitle(f'datacopy: readData2 (flushing) [{p_jobName}]')
-    logging.logPrint(f'\nreadData2({p_jobName}): Ended', shared.L_DEBUG)
+    logging.logPrint(f'\n({p_jobName}): Ended', shared.L_DEBUG)
 
 def writeData(p_jobID:int, p_jobName:str, p_thread:int, p_connection, p_cursor, p_iQuery:str = ''):
     '''writes data to destinations'''
 
-    seqnbr = -1
-
     setproctitle.setproctitle(f'datacopy: writeData [{p_jobName}]')
 
-    logging.logPrint(f'\nwriteData({p_jobName}:{p_thread}): Started', shared.L_DEBUG)
+    logging.logPrint(f'\n({p_jobName}:{p_thread}): Started', shared.L_DEBUG)
     shared.eventStream.put( (shared.E_WRITE_START, p_jobID, p_jobName, None, None) )
     while shared.Working.value and not shared.ErrorOccurred.value:
         try:
-            seqnbr, bData = shared.dataBuffer.get( block=True, timeout = 1 )
-            #logging.logPrint(f'writer[{p_jobName}:{p_thread}]: pulled shared.seqnbr {seqnbr}, queue size {shared.dataBuffer.qsize()}', shared.L_DEBUG)
+            bData = shared.dataBuffer.get( block=True, timeout = 1 )
         except queue.Empty:
             if shared.stopWhenEmpty.value:
-                logging.logPrint(f"\nwriteData({p_jobName}:{p_thread}:{seqnbr}): end of data detected", shared.L_DEBUG)
+                logging.logPrint(f"\n({p_jobName}:{p_thread}): end of data detected", shared.L_DEBUG)
                 break
             continue
         iStart = timer()
@@ -216,7 +208,7 @@ def writeData(p_jobID:int, p_jobName:str, p_thread:int, p_connection, p_cursor, 
             p_connection.commit()
         except Exception as error:
             shared.ErrorOccurred.value = True
-            logging.logPrint(f'writeData({p_jobName}:{p_thread}): DB Error: [{error}], packet seq [{seqnbr}]')
+            logging.logPrint(f'writeData({p_jobName}:{p_thread}): DB Error: [{error}]')
             logging.logPrint(bData, shared.L_DUMPDATA)
             logging.statsPrint('writeError', p_jobName, 0, (timer() - iStart), p_thread)
             try:
@@ -240,30 +232,27 @@ def writeData(p_jobID:int, p_jobName:str, p_thread:int, p_connection, p_cursor, 
         pass
 
     shared.eventStream.put( (shared.E_WRITE_END, p_jobID, p_jobName, None, None) )
-    logging.logPrint(f'\nwriteData({p_jobName}:{p_thread}): Ended', shared.L_DEBUG)
+    logging.logPrint(f'\n({p_jobName}:{p_thread}): Ended', shared.L_DEBUG)
 
 def writeDataCSV(p_jobID:int, p_jobName:str, p_thread:int, p_conn, p_Header:str, p_encodeSpecial:bool = False):
     '''write data to csv file'''
 
     setproctitle.setproctitle(f'datacopy: writeDataCSV [{p_jobName}]')
 
-    seqnbr = -1
-
     #p_conn is returned by initConnections as (file, stream)
     f_file, f_stream = p_conn
 
-    logging.logPrint(f'\nwriteDataCSV({p_jobName}:{p_thread}): Started', shared.L_DEBUG)
+    logging.logPrint(f'\n({p_jobName}:{p_thread}): Started', shared.L_DEBUG)
     shared.eventStream.put( (shared.E_WRITE_START, p_jobID, p_jobName, None, None) )
     if p_Header != '':
         f_stream.writerow(p_Header.split(','))
 
     while shared.Working.value and not shared.ErrorOccurred.value:
         try:
-            seqnbr, bData = shared.dataBuffer.get( block=True, timeout = 1 )
-            #logging.logPrint('writer[{0}:{1}]: pulled shared.seqnbr {2}, queue size {3}'.format(p_jobName, p_thread , seqnbr, shared.dataBuffer.qsize()), shared.L_DEBUG)
+            bData = shared.dataBuffer.get( block=True, timeout = 1 )
         except queue.Empty:
             if shared.stopWhenEmpty.value:
-                logging.logPrint(f"\nwriteDataCSV({p_jobName}:{p_thread}:{seqnbr}): end of data detected", shared.L_DEBUG)
+                logging.logPrint(f"\n({p_jobName}:{p_thread}): end of data detected", shared.L_DEBUG)
                 break
             continue
         iStart = timer()
@@ -294,4 +283,4 @@ def writeDataCSV(p_jobID:int, p_jobName:str, p_thread:int, p_conn, p_Header:str,
         logging.statsPrint('writeError', p_jobName, 0, (timer() - iStart), p_thread)
 
     shared.eventStream.put( (shared.E_WRITE_END, p_jobID, p_jobName, None, None) )
-    logging.logPrint(f'\nwriteDataCSV({p_jobName}:{p_thread}): Ended', shared.L_DEBUG)
+    logging.logPrint(f'\n({p_jobName}:{p_thread}): Ended', shared.L_DEBUG)

@@ -1,6 +1,6 @@
 '''job sequencer control'''
 
-#pylint: disable=invalid-name, broad-except, line-too-long
+#pylint: disable=invalid-name, broad-except, bare-except, line-too-long
 
 import sys
 import os
@@ -377,7 +377,12 @@ def copyData():
                             bEndOfJobs = True
 
                 if shared.screenStats:
-                    print(f'\r{iTotalDataLinesRead:,} recs read ({(iTotalDataLinesRead/iTotalReadSecs):,.2f}/sec x {iRunningReaders}r,{iRunningQueries}q), {iTotalDataLinesWritten:,} recs written ({(iTotalDataLinesWritten/iTotalWrittenSecs):,.2f}/sec x {iRunningWriters}), queue len: {iCurrentQueueSize:,}, max queue: {shared.maxQueueLenObserved}, timeout timer: {iIdleTimeout}, idle time: {shared.idleSecsObserved.value}        ', file=shared.screenStatsOutputFile, end='', flush = True)
+                    statsLine=f'\r{iTotalDataLinesRead:,} recs read ({(iTotalDataLinesRead/iTotalReadSecs):,.2f}/sec x {iRunningReaders}r,{iRunningQueries}q), {iTotalDataLinesWritten:,} recs written ({(iTotalDataLinesWritten/iTotalWrittenSecs):,.2f}/sec x {iRunningWriters}), queue len: {iCurrentQueueSize:,}, max queue: {shared.maxQueueLenObserved}, timeout timer: {iIdleTimeout}, idle time: {shared.idleSecsObserved.value}        '
+                    if shared.screenStats2StdOut:
+                        print(statsLine, file=sys.stdout, end='', flush = True)
+                    else:
+                        print(statsLine, file=sys.stderr, end='', flush = True)
+
                 logging.logPrint(f'reads:{iTotalDataLinesRead:,} ({(iTotalDataLinesRead/iTotalReadSecs):,.2f}/s x {iRunningReaders}r,{iRunningQueries}q); writes:{iTotalDataLinesWritten:,} ({(iTotalDataLinesWritten/iTotalWrittenSecs):,.2f}/s x {iRunningWriters}); ql:{iCurrentQueueSize:,}, mq:{shared.maxQueueLenObserved}; i:{iIdleTimeout}, it:{shared.idleSecsObserved.value}', shared.L_STATSONPROCNAME)
             if shared.ErrorOccurred.value:
                 #clean up any remaining data

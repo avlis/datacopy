@@ -3,13 +3,12 @@
 #pylint: disable=invalid-name, line-too-long
 
 import os
-import sys
+
 import multiprocessing as mp
 from datetime import datetime
 
 
 #### Constants ##########################################################################
-
 
 E_NOOP = 0
 E_QUERY = 1
@@ -52,10 +51,7 @@ testQueries:bool = bool(os.getenv('TEST_QUERIES','no') == 'yes')
 
 screenStats:bool = bool(os.getenv('SCREEN_STATS','yes') == 'yes')
 
-if os.getenv('SCREEN_STATS_OUTPUT','stderr') == 'stdout':
-    screenStatsOutputFile = sys.stdout
-else:
-    screenStatsOutputFile = sys.stderr
+screenStats2StdOut:bool = bool(os.getenv('SCREEN_STATS_OUTPUT','stderr') == 'stdout')
 
 stopJobsOnError:bool = bool(os.getenv('STOP_JOBS_ON_ERROR','yes') == 'yes')
 
@@ -81,7 +77,6 @@ defaultFetchSize:int = 1024
 
 #### Shared Variables, but changed in single thread contexts ############################
 
-
 connections = {}
 queries = {}
 
@@ -103,12 +98,10 @@ maxQueueLenObservedEvents:int = 0
 
 #### OBJECTS shared / edited in multithreads  ###########################################
 
-
 dataBuffer = mp.Queue(queueSize)
 eventStream = mp.Queue()
 logStream = mp.Queue()
 
-seqnbr = mp.Value('i', 0)
 Working = mp.Value('b', True)
 ErrorOccurred =  mp.Value('b',False)
 stopWhenEmpty = mp.Value('b', False)
