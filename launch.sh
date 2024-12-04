@@ -45,7 +45,13 @@ fi
 
 echo "*** datacopy container version [${BASE_VERSION}][${VERSION}] ***"
 echo "*** launching with container user [${RUN_UNAME}:${RUN_GNAME}], UID=${RUN_UID}, GID=${RUN_GID} ***"
+echo "*** received parameters: [$@]"
 
-su -p -g ${RUN_GNAME} ${RUN_UNAME} -c "/usr/local/bin/python3 /usr/local/bin/datacopy.py" &
-sudo_pid=$!
-wait ${sudo_pid}
+if [ -z "${BUILD_DEBUG}" ]; then
+    su -p -g ${RUN_GNAME} ${RUN_UNAME} -c "/usr/local/bin/python3 /usr/local/bin/datacopy.py $@" &
+    sudo_pid=$!
+    wait ${sudo_pid}
+else
+    echo "BUILD_DEBUG is set, launching bash"
+    /bin/bash
+fi
