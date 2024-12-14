@@ -1,0 +1,6 @@
+setproctitle
+psutil
+requests
+pandas
+pyodbc
+mysql-connector-python

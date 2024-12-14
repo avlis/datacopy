@@ -1,7 +1,5 @@
-pandas
-pyodbc
 cx_Oracle
 psycopg2
 mariadb
 mysql-connector-python
-setproctitle
+databricks-sql-connector

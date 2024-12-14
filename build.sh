@@ -1,6 +1,19 @@
 #!/bin/bash
 # note all args are passed builds, practical for --build-arg HTTP_PROXY=...
 
+PROXY_ARGS="--network=host"
+if [ -z "${httpd_proxy}" ]; then
+	PROXY_ARGS="${PROXY_ARGS} --build-arg HTTPS_PROXY=${HTTPS_PROXY}"
+fi
+if [ -z "${http_proxy}" ]; then
+	PROXY_ARGS="${PROXY_ARGS} --build-arg HTTP_PROXY=${HTTP_PROXY}"
+fi
+if [ -z "${no_proxy}" ]; then
+	PROXY_ARGS="${PROXY_ARGS} --build-arg NO_PROXY=${NO_PROXY}"
+fi
+
+BASEIMAGE=${BASEIMAGE:-python:3.12.8-slim}
+
 BASENAME=${BASENAME:-datacopy}
 FINALNAME=${FINALNAME:-datacopy}
 
@@ -17,12 +30,12 @@ if [ -z "${SKIP_BUILD_BASE}" ]; then
 	docker rmi ${BASENAME}:build ${BASENAME}:flat
 
 	if [ -z "${SKIP_FETCH_PYTHON}" ]; then
-		echo "*** refreshing python:3-slim"
-		docker pull python:3-slim
+		echo "*** refreshing ${BASEIMAGE}"
+		docker pull ${BASEIMAGE}
 	fi
 
 	echo "*** building ${BASENAME}:build"
-	if 	docker build -t ${BASENAME}:build -f ${BASEDOCKERFILE} "$@" . && \
+	if 	docker build -t ${BASENAME}:build -f ${BASEDOCKERFILE} --build-arg BASEIMAGE=${BASEIMAGE} ${PROXY_ARGS} "$@" . && \
 		docker run --name baseexport ${BASENAME}:build /bin/true && \
 		docker export baseexport | docker import - ${BASENAME}:flat ; then
 		docker rm baseexport 2>&1 >/dev/null
@@ -45,4 +58,4 @@ if [ ! -z "${BASENAME}" ]; then
 	BARGS="${BARGS} --build-arg BASENAME=${BASENAME}"
 fi
 
-docker build -t ${FINALNAME}${EXTRAVERSION}:latest -f ${FINALDOCKERFILE} . ${BARGS} "$@"
+docker build -t ${FINALNAME}${EXTRAVERSION}:latest -f ${FINALDOCKERFILE} . ${BARGS} ${PROXY_ARGS} "$@"

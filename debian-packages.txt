@@ -1,7 +1,0 @@
-python3-pandas
-python3-pyodbc
-python3-cx-oracle
-python3-psycopg2
-python3-mariadb
-python3-mysql-connector-python
-python3-setproctitle
