@@ -9,7 +9,7 @@ reads the connections from one file (connections.csv), and queries from another.
 the following env vars can be used to control it:
 - CONNECTIONS_FILE: (default connections.csv)
 - JOB_FILE: the csv file (default jobs.csv)
-- LOG_NAME: the output files name prefix. (defaults to dest.table)
+- LOG_NAME: the output files name prefix. (defaults to timestamp)
 - TEST_QUERIES: set to 'yes' to only execute the select, and does not delete/write on destinations
 - QUEUE_SIZE: (default 256) 
 - REUSE_WRITERS: (default no)
