@@ -9,22 +9,30 @@ reads the connections from one file (connections.csv), and queries from another.
 the following env vars can be used to control it:
 - CONNECTIONS_FILE: (default connections.csv)
 - JOB_FILE: the csv file (default jobs.csv)
-- LOG_FILE: the output file (defaults to dest.table.ok|ERROR.log)
+- LOG_NAME: the output files name prefix. (defaults to dest.table)
 - TEST_QUERIES: set to 'yes' to only execute the select, and does not delete/write on destinations
 - QUEUE_SIZE: (default 256) 
 - REUSE_WRITERS: (default no)
 - QUEUE_FB4NEWR: default 3, means that the buffer can be only 1/3 full before starting the next reader, if reusing writers.
-- STOP_JOBS_ON_ERROR (default yes)
 - DUMP_ON_ERROR (default no)
 - DUMPFILE_SEP (default | )
 - STATS_IN_JSON (default no)
 - SCREEN_STATS (default yes)
 - SCREEN_STATS_OUTPUT (default stderr, can be set to 'stdout')
-- DEBUG (default no, yes to get a lot of detail on stderr, and a DUMP of the block that fails on writes)
+- DEBUG (default no, yes to get a lot of detail on log or stderr or both)
+- DEBUG_TO_LOG (default no, sends debug messages to the log file)
+- DEBUG_TO_STDERR (default no, sends debug messages to console)
+- BUILD_DEBUG (default no, if yes instead of launching the python app runs /bin/bash)
 - PARALLEL_READERS (default 1)
 - ADD_NAMES_DELIMITERS (default no, yes to add double quotes or backticks on table and column name; useful if someone used reserved words as table names... or spaces)
 - RUNAS_UID, GID: to create a regular, non privileged user to run the copy, and to create the log and stat files with the same user id and group id of a regular user on the host (instead of root). 
 - IDLE_TIMEOUT_SECS: by default, datacopy will wait forever. it can be thhe case that the sources will never finish processing the query, or the destination is locked and commits don't happen. in this situations, this setting can be used to give up. NOTE: does not apply to delete/truncate stage; it just kicks in after the data copy stage. It resets every time there is an event (packet received, packet wrote, query starts, query ends, etc)
+- EXECUTION_ID: when running a lot of these things, its practical. as is shows on stats and log files.
+- COLLECT_MEMORY_STATS (default no, if yes will produce a new .memory log file), with memory in MB per process) 
+- COLLECT_MEMORY_STATS_INTERVAL_SECS (default 1, can be used to change interval. it's a float, but anything below .2 will probably not be effective) 
+- MEMORY_STATS_IN_JSON (if yes output is json like instead of csv)
+
+- LOG_TIMESTAMP_FORMAT, STATS_TIMESTAMP_FORMAT, MEMORY_STATS_TIMESTAMP_FORMAT: you can choose between unix, float; date (regular date format, str); or compact (20250108223421.493323, dateandtime.milisecs)
 
 See sample-run_datacopy.sh for an example of run.
 
@@ -160,10 +168,10 @@ when SIGINT (control-C) or SIGTERM are received, an error message is written on 
 
 ## Building the docker image:
 
-The build is split in two parts, the "base", and the final image itself. The reason is to allow the final image to be around 665 megabytes instead of over 1.1 GB. 
+The build is split in two parts, the "base", and the final image itself. The reason is export / import to squash the "heavy" part of the container, and allow the final image to be around 900 megabytes instead of over 1.5 GB.
 
 if you are just updating the python code, you can run:
 ```
-SKIP_BUILD_BASE=yes ./build.sh
+SKIP_PULL_PYTHON=yes SKIP_BUILD_BASE=yes ./build.sh
 ```
  

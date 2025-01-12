@@ -4,245 +4,489 @@
 import os
 import sys
 from datetime import datetime
-from time import sleep
+from time import sleep, time
 from timeit import default_timer as timer
 import multiprocessing as mp
-import signal
+
 import queue
 import csv
 import inspect
+
+from enum import Enum
 
 import setproctitle
 
 import modules.shared as shared
 
-logThread = None
+#### Constants ##########################################################################
 
-def logPrint(p_Message:str, p_logLevel:int=shared.L_INFO):
+class logLevel(Enum):
+    '''log levels'''
+    INFO = 1
+    DEBUG = 2
+    ERROR = 4
+    STATS = 8
+    DUMP_SHARED = 16
+    DUMP_COLS = 16 + 1
+    DUMP_DATA = 16 + 2
+    OPEN = 32
+    CLOSE = 64
+    STATSONPROCNAME = 128
+    END = 255
+
+#### Variables ##########################################################################
+
+logThread:mp.Process
+
+memoryStatsFile = None
+
+
+#### "Public" stuff #####################################################################
+
+def logPrint(p_message, p_logLevel:int=logLevel.INFO, p_jobID:int=None, p_threadID:int=None, nested:bool=False):
     ''' sends message to the queue that manages logging'''
-    #if shared.DEBUG:
-    #    print(f'logPrint: adding message to the log queue [{p_logLevel}][{p_Message}]', file=sys.stderr, flush=True)
+
+    where:str = None
+    message = None
+    jobName:str = None
+
+    if p_logLevel == logLevel.DEBUG and not shared.DEBUG:
+        return
+
     match p_logLevel:
-        case shared.L_DEBUG:
-            if not shared.DEBUG:
-                return
-            modName = '<unknown>'
-            funcName = '<unknown>'
-            nl = ''
-            if p_Message.startswith('\n'):
-                nl = '\n'
-                p_Message = p_Message[1:]
-            try:
-                funcName = inspect.stack()[1].function
-                modName = inspect.getmodule(inspect.stack()[1][0]).__name__ # type: ignore
-            except:
-                pass
-            shared.logStream.put((p_logLevel, f'{nl}{modName}.{funcName}: {p_Message}'), block=True, timeout=shared.idleTimetoutSecs)
-        case shared.L_STATSONPROCNAME:
-            shared.logStream.put((p_logLevel, p_Message), block=True, timeout=shared.idleTimetoutSecs)
+        case logLevel.DUMP_COLS | logLevel.DUMP_DATA:
+            message = p_message
+
+        case logLevel.DUMP_SHARED:
+            printSharedVariables(p_message)
+
         case _:
-            shared.logStream.put((p_logLevel, p_Message))
+            if nested:
+                where = whoAmI(3)
+            else:
+                where = whoAmI()
+            message = p_message
 
+            if p_jobID is None:
+                jobName=None
+            else:
+                jobName=f'[{getJobName(p_jobID)}]'
 
-def statsPrint(p_type:str, p_jobName:str, p_recs:int, p_secs:float, p_threads:int):
+    if message is not None:
+        shared.logQueue.put( ( p_logLevel, message, p_jobID, p_threadID, jobName, where ), block=True, timeout=shared.idleTimetoutSecs)
+
+def statsPrint(p_type:str, p_jobID:int, p_recs:int, p_secs:float, p_threads:int):
     '''sends stat messages to the log queue'''
 
-    sMsg = shared.statsFormat.format(datetime.now().strftime('%Y%m%d%H%M%S.%f'), shared.executionID, p_type, p_jobName, p_recs, p_secs, p_threads )
-    shared.logStream.put((shared.L_STATS, sMsg))
+    jobName:str = 'global'
+    if p_jobID is not None:
+        jobName = getJobName(p_jobID)
 
+    sMsg = shared.statsFormat.format(shared.statsTimestampFunction(), shared.executionID, p_type, jobName, p_recs, p_secs, p_threads )
+    shared.logQueue.put( ( logLevel.STATS, sMsg, None, None, None, None ) )
 
-def openLogFile(p_dest:str, p_table:str):
-    '''setups the log file'''
+def processError(p_e:Exception=None, p_stack:str=None, p_message:str=None, p_jobID:int=None, p_stop:bool=None, p_dontSendToStats:bool=False, p_threadID:int=None, p_exitCode:int=None) -> None:
+    fromWhere = whoAmI()
+    if p_threadID is not None:
+        fromWhere=f'{fromWhere}#{p_threadID}'
 
-    sLogFilePrefix = ''
-    if shared.logFileName == '':
-        sLogFilePrefix = f'{p_dest}.{p_table}'
+    logPrint(f'@[{fromWhere}]: stop=[{p_stop}], jobID=[{p_jobID}], threadID=[{p_threadID}], exitCode=[{p_exitCode}]', logLevel.DEBUG, p_jobID=p_jobID)
+    stackDetail:str=''
+    if p_stack is not None:
+        stackDetail=f'\n*** stack ***:\n{p_stack}\n*** end of stack ***'
+
+    if p_dontSendToStats == False:
+        statsPrint('ERROR', None, 0, 0, 0)
+
+    if p_exitCode is not None:
+        with shared.exitCode.get_lock():
+            shared.exitCode.value = p_exitCode
+
+    if p_e is None:
+        logPrint(f'{p_message}', p_logLevel=logLevel.ERROR, p_jobID=p_jobID, p_threadID=p_threadID, nested=True)
     else:
-        sLogFilePrefix = f'{shared.logFileName}'
+        logPrint(f' Exception [{type(p_e).__name__}] occurred, message=[{p_message}]:\n{p_e}\n{stackDetail}', logLevel.ERROR, p_jobID=p_jobID, p_threadID=p_threadID, nested=True)
 
-    shared.logStream.put( (shared.L_OPEN, sLogFilePrefix) )
+    with shared.ErrorOccurred.get_lock():
+        shared.ErrorOccurred.value = True
 
+    if p_stop is not None and p_stop:
+        with shared.stopWhenEmpty.get_lock():
+            shared.stopWhenEmpty.value = True
 
-def closeLogFile(p_exitCode = None):
+        with shared.Working.get_lock():
+            shared.Working.value = False
+
+        shared.eventQueue.put((shared.E_STOP, None, None, None))
+
+    logPrint(f'@[{fromWhere}]: ended', logLevel.DEBUG, p_jobID=p_jobID)
+
+def openLog():
+    '''setups the log'''
+    sLogFilePrefix = shared.logName
+    shared.logQueue.put( (logLevel.OPEN, sLogFilePrefix, None, None, None, None) )
+
+def closeLog():
     '''makes sure the log file is properly handled.'''
 
-    #give some time to other threads to say whatever they need to say to logs...
-    if p_exitCode is None:
-        sleep(3)
-
-    loopTimeout = 10
-    while shared.logStream.qsize() > 0 and loopTimeout > 0:
+    def print_message(message:str):
         if shared.DEBUG:
-            print(f'closeLogFile: waiting for empty log queue, stage 1 [{shared.logStream.qsize()}]', file=sys.stderr, flush=True)
-        sleep(1)
-        loopTimeout -= 1
+            print(message, file=sys.stderr, flush=True)
 
-    shared.logStream.put( (shared.L_CLOSE, '') )
-    loopTimeout = 3
-    while shared.logStream.qsize() > 0 and loopTimeout > 0:
-        if shared.DEBUG:
-            print(f'closeLogFile: waiting for empty log queue, stage 2 [{shared.logStream.qsize()}]', file=sys.stderr, flush=True)
-        sleep(1)
-        loopTimeout -= 1
+    def process_remaining_logs(loopTimeout:int, stage:int):
+        title=f'closeLog: waiting for empty log queue (stage {stage}):'
+        while shared.logQueue.qsize() > 0:
+            print_message(f'{title} logs to process=[{shared.logQueue.qsize()}]')
+            sleep(1)
+            loopTimeout -= 1
+            if  loopTimeout == 0:
+                print_message(f'{title} timing out.')
+                break
+        while shared.logQueue.qsize() > 0:
+            dLogLevel, dMessage, dJobID, djobName, dWhere = shared.logQueue.get()
+            print_message(f'{title} discarted LOG: [{dLogLevel.name}][{dMessage}][{dJobID}][{djobName}][{dWhere}]')
+        print_message(f'{title} exiting.')
 
-    if p_exitCode is not None:
-        if shared.DEBUG:
-            print('closeLogFile: sending the log thread a stop command.', file=sys.stderr, flush=True)
-        shared.logStream.put( (shared.L_END, mp.current_process().name) )
-        sleep(1)
+    def process_remaining_events(loopTimeout:int):
+        title='closeLog: waiting for empty event queue:'
+        while shared.eventQueue.qsize() > 0 and loopTimeout > 0:
+            print_message(f'{title} events to process=[{shared.eventQueue.qsize()}]')
+            sleep(1)
+            loopTimeout -= 1
+        while shared.eventQueue.qsize() > 0:
+            dType, dJobId, dRecs, dSecs = shared.eventQueue.get()
+            print_message(f'{title} discarted EVENT: [{shared.eventsDecoder[dType]}][{dJobId}][{dRecs}][{dSecs}]')
 
-    loopTimeout = 3
-    while shared.logStream.qsize() > 0 and loopTimeout > 0:
-        if shared.DEBUG:
-            print(f'closeLogFile: waiting for empty log queue, stage 3 [{shared.logStream.qsize()}]', file=sys.stderr, flush=True)
-        sleep(1)
-        loopTimeout -= 1
+    try:
+        print_message('\ncloseLog: called')
 
-    if shared.logStream.qsize() > 0 and shared.DEBUG:
-        print('closeLogFile: something is wrong, quitting with log messages still in the queue!', file=sys.stderr, flush=True)
+        with shared.logIsAlreadyClosed.get_lock():
+            if shared.logIsAlreadyClosed.value:
+                print_message('\ncloseLog: was already closed.')
+                return
+            shared.logIsAlreadyClosed.value = True
 
-    if p_exitCode is not None:
-        if shared.DEBUG:
-            print('closeLogFile: making sure log thread is terminated...', file=sys.stderr, flush=True)
+        process_remaining_events(3)
 
+        process_remaining_logs(3, 1)
+
+        print_message(f'\ncloseLog: sending CLOSE to write log thread')
+        shared.logQueue.put( (logLevel.CLOSE, None, None, None, None, None) )
+
+        process_remaining_logs(3, 2)
+
+        print_message('closeLog: sending END to write log thread')
+        shared.logQueue.put( (logLevel.END, None, None, None, None, None) )
+
+        process_remaining_logs(3, 3)
+
+    except Exception as e:
+        print_message(f'closeLog: unexpected error ({sys.exc_info()[2].tb_lineno}): [{e}]')
+
+def getJobName(p_jobID:int) -> str:
+    try:
+        return shared.jobs['jobName'][p_jobID]
+    except:
+        logPrint(f'getJobName call could not find jobName for key [{p_jobID}]', logLevel.DEBUG, nested=True)
+        return 'global'
+
+#### "Private" stuff #####################################################################
+
+def whoAmI(stackLevel:int=2) -> str:
+    '''
+    returns modulename and function name. to use on logPrint or anywhere else.
+    '''
+
+    modName = '<unknown>'
+    funcName = '<unknown>'
+    className = ''
+    try:
+        frame = inspect.stack()[stackLevel]
+        funcName = frame.function
         try:
-            logThread.join(timeout=1)
-            logThread.terminate()
-            logThread.join(timeout=1)
-
-        except Exception as error:
-            print(f'closeLogFile: error terminating log thread ({sys.exc_info()[2].tb_lineno}): [{error}]', file=sys.stderr, flush=True)
-
-        if shared.DEBUG:
-            print('closeLogFile: log thread terminated and joined.', file=sys.stderr, flush=True)
-
-        if shared.DEBUG:
-            print(f'closeLogFile: exiting with exitcode [{p_exitCode}]', file=sys.stderr, flush=True)
-        sys.exit(p_exitCode)
+            className = f".{frame.frame.f_locals['self'].__class__.__name__}"
+        except:
+            pass
+        modName = inspect.getmodule(frame[0]).__name__ # type: ignore
+    except:
+        pass
+    return f'{modName}{className}.{funcName}'
 
 
-def writeLogFile():
-    '''processes messages on the log queue and sends them to file, stdout, stderr acordingly'''
+def monitor_memory():
+    '''
+        called by writeToLog, runs on the context of its thread, not on the main PID!
+    '''
 
-    # WARNING: Log writing failures does not stop processing!
+    global memoryStatsFile
 
-    #ignore control-c on this thread
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    timestamp = shared.memoryTimestampFunction()
+    totalMem = 0
 
-    setproctitle.setproctitle('datacopy: log writer')
+    try:
+        # Get memory usage of the main process
+        mem = shared.collectMemoryMainProcessID.memory_info().rss / (1024 ** 2)
+        totalMem += mem
+
+        memStr = shared.memoryStatsFormat.format(timestamp, shared.executionID, mem, shared.collectMemoryMainProcessID.pid, shared.collectMemoryMainProcessID.status(), ' '.join(shared.collectMemoryMainProcessID.cmdline()))
+
+        print(memStr, file=memoryStatsFile, flush=True)
+    except Exception as e:
+        logPrint(f'error on main process: [{e}]', logLevel.DEBUG)
+
+    # Get memory usage of child processes
+    for child in shared.collectMemoryMainProcessID.children(recursive=True):
+        try:
+            mem = child.memory_info().rss / (1024 ** 2)
+            totalMem += mem
+            processName = ' '.join(child.cmdline())
+            memStr = shared.memoryStatsFormat.format(timestamp, shared.executionID, mem, child.pid, child.status(), processName)
+            print(memStr, file=memoryStatsFile, flush=True)
+        except Exception as e:
+            logPrint(f'error on [{processName}]: [{e}]', logLevel.DEBUG)
+    try:
+        memStr = shared.memoryStatsFormat.format(timestamp, shared.executionID, totalMem, -1, '-', 'totalMemory')
+        print(memStr, file=memoryStatsFile, flush=True)
+    except Exception as e:
+        logPrint(f'error on total mem: [{e}]', logLevel.DEBUG)
+
+    logPrint(f'memory stats: [{totalMem}]', logLevel.DEBUG)
+
+def printSharedVariables(fromWhere:str):
+    '''
+        prints shared variables.
+        it should be called from the logPrint and not writeToLog, so it runs on the thread that calls it, not on the logging thread!
+    '''
+
+    variables = list
+
+    variables = dir(shared)
+    logPrint(f'--- dump of {len(variables)} shared variables requested from [{fromWhere}]:', logLevel.DEBUG)
+
+    for variable in variables:
+        try:
+            value = getattr(shared, variable)
+            #dont want to know about constants or internal objects with _ in name
+            if isinstance(value, (int, bool, str, float)) and variable[1:2] != '_':
+                shared.logQueue.put( ( logLevel.DUMP_SHARED, value, None, None, None, f'{variable}({type(value).__name__})' ) , block=True, timeout=shared.idleTimetoutSecs)
+
+            if type(value).__name__ == 'Synchronized':
+                shared.logQueue.put( ( logLevel.DUMP_SHARED, value.value, None, None, None, f'{variable}(mp.{type(value.value).__name__})' ), block=True, timeout=shared.idleTimetoutSecs)
+
+        except Exception as e:
+            processError(p_e=e, p_message=f'something bad appened trying to dump shared variables: [{variable}]')
+            return
+
+    logPrint(f'--- end of dumping shared variables', logLevel.DEBUG)
+
+
+def writeToLog_files():
+    '''
+        processes messages on the log queue and sends them to files, stdout, stderr acordingly
+        runs on its own thread, does not run on the main PID!
+    '''
+
+    shared.block_signals()
+
+    setproctitle.setproctitle('datacopy: log file writer')
 
     logFile = None
     statsFile = None
+    global memoryStatsFile
+    collectMemoryStatsNextTime = timer()+shared.collectMemoryStatsIntervalSecs
     dumpColNames = None
     dumpFile = None
     sLogFilePrefix = ''
 
+    def init_json_file(p_file) -> None:
+        print(f'[{{"start":{datetime.now().strftime('%Y%m%d%H%M%S.%f')}}},', file=p_file, flush=True)
+
+    def term_json_file(p_file) -> None:
+        print(f'{{"stop":{datetime.now().strftime('%Y%m%d%H%M%S.%f')}}}]', file=p_file, flush=True)
+
+
     bKeepGoing=True
+    idleCount=0
     while bKeepGoing:
         try:
-            (msgLogLevel, sMsg) = shared.logStream.get( block=True, timeout = 1 )
+            (logLevel, message, jobID, threadID, jobName, where) = shared.logQueue.get( block=True, timeout = .1 )
+            idleCount = 0
+
+            if logLevel == logLevel.STATSONPROCNAME:
+                setproctitle.setproctitle(f'datacopy: log writer [{message}]')
+                continue
+
+            timestamp = shared.logTimestampFunction()
+
+            if jobName is None:
+                jobName = ''
+
+            if threadID is not None:
+                sThreadID=f'#{threadID}'
+            else:
+                sThreadID=''
+
+            fullMessage = f'{timestamp}:{logLevel.name}:[{where}]{jobName}{sThreadID}: {message}'
+            if shared.SCREEN_STATS:
+                fullScreenMessage=f'\n{fullMessage}'
+            else:
+                fullScreenMessage = fullMessage
+
+            match logLevel:
+
+                case logLevel.STATS:
+                    if statsFile:
+                        try:
+                            print(message, file=statsFile, flush=True)
+                        except Exception:
+                            pass
+
+                case logLevel.DEBUG:
+                    if shared.DEBUG_TO_STDERR:
+                        print(fullScreenMessage, file=sys.stderr, flush=True)
+                    if shared.DEBUG_TO_LOG:
+                        if logFile:
+                            try:
+                                print(fullMessage, file=logFile, flush=True)
+                            except Exception:
+                                pass
+
+                case logLevel.INFO | logLevel.ERROR:
+                    print(fullScreenMessage, file=sys.stdout, flush=True)
+                    if logFile:
+                        try:
+                            print(fullMessage, file=logFile, flush=True)
+                        except Exception:
+                            pass
+
+                case logLevel.DUMP_SHARED:
+                    if shared.DEBUG_TO_STDERR:
+                        print(f'{where}=[{message}]', file=sys.stderr, flush=True)
+                    if shared.DEBUG_TO_LOG:
+                        if logFile:
+                            try:
+                                print(f'{where}=[{message}]', file=logFile, flush=True)
+                            except Exception:
+                                pass
+
+                case logLevel.DUMP_COLS:
+                    dumpColNames = message
+
+                case logLevel.DUMP_DATA:
+                    if shared.DEBUG or shared.DUMP_ON_ERROR:
+                        try:
+                            dumpFile = open( f'{sLogFilePrefix}.DUMP', 'w', encoding = 'utf-8')
+                            dumper=csv.writer(dumpFile, delimiter = shared.dumpFileSeparator, quoting = csv.QUOTE_MINIMAL)
+                            dumper.writerow(dumpColNames)
+                            dumper.writerows(shared.encodeSpecialChars(message))
+                            dumpFile.close()
+                        except Exception:
+                            pass
+
+                case logLevel.OPEN:
+                    try:
+                        if shared.DEBUG:
+                            print(f'writeToLog_files: opening [{message}.running.log]', file=sys.stderr, flush=True)
+                        sLogFilePrefix = message
+                        #flush any previously open file
+                        if logFile:
+                            logFile.flush()
+                            logFile.close()
+                            logFile = None
+
+                        logFile = open( f'{message}.running.log', 'a', encoding = 'utf-8')
+                    except Exception as e:
+                        print(f'writeToLog_files: could not open log file [{message}]: [{e}]', file=sys.stderr, flush=True)
+
+                    try:
+
+                        #flush any previously open file
+                        if statsFile:
+                            statsFile.flush()
+                            statsFile.close()
+                            statsFile = None
+
+                        if shared.STATS_IN_JSON:
+                            statsFile = open( f'{message}.stats.json', 'a', encoding = 'utf-8')
+                            init_json_file(statsFile)
+                        else:
+                            statsFile = open( f'{message}.stats.csv', 'a', encoding = 'utf-8')
+                    except Exception as e:
+                        print(f'writeToLog_files: could not open stats file [{message}]: [{e}]', file=sys.stderr, flush=True)
+
+                    if shared.COLLECT_MEMORY_STATS:
+                        logPrint('collect memory stats enabled', logLevel.DEBUG)
+                        try:
+
+                            #flush any previously open file
+                            if memoryStatsFile:
+                                memoryStatsFile.flush()
+                                memoryStatsFile.close()
+                                memoryStatsFile = None
+
+                            if shared.MEMORY_STATS_IN_JSON:
+                                memoryStatsFile = open( f'{message}.memory.json', 'a', encoding = 'utf-8')
+                                init_json_file(memoryStatsFile)
+                            else:
+                                memoryStatsFile = open( f'{message}.memory.csv', 'a', encoding = 'utf-8')
+                        except Exception as e:
+                            print(f'writeToLog_files: could not open memory stats file [{message}]: [{e}]', file=sys.stderr, flush=True)
+
+                case logLevel.CLOSE:
+                    if shared.DEBUG:
+                        print('writeToLog_files: received CLOSE message.', file=sys.stderr, flush=True)
+                        setproctitle.setproctitle('datacopy: log file writer, closing')
+
+                    if logFile:
+                        logFile.flush()
+                        logFile.close()
+                        logFile = None
+
+                        if shared.ErrorOccurred.value:
+                            sLogFileFinalName = f'{sLogFilePrefix}.ERROR.log'
+                        else:
+                            sLogFileFinalName = f'{sLogFilePrefix}.ok.log'
+                        try:
+                            os.rename(f'{sLogFilePrefix}.running.log', sLogFileFinalName)
+                        except Exception:
+                            pass
+
+                    if statsFile:
+                        if shared.STATS_IN_JSON:
+                            term_json_file(statsFile)
+                        statsFile.flush()
+                        statsFile.close()
+                        statsFile = None
+                    if memoryStatsFile:
+                        if shared.MEMORY_STATS_IN_JSON:
+                            term_json_file(memoryStatsFile)
+                        memoryStatsFile.flush()
+                        memoryStatsFile.close()
+                        memoryStatsFile = None
+
+                case logLevel.END:
+                    if shared.DEBUG:
+                        print('writeToLog_files: received END message.', file=sys.stderr, flush=True)
+                        setproctitle.setproctitle('datacopy: log file writer, ending')
+                    bKeepGoing = False
+
         except queue.Empty:
-            continue
+            idleCount += 1
+            if idleCount > 30:
+                setproctitle.setproctitle(f'datacopy: log file writer, idleCount=[{idleCount}], Working=[{shared.Working.value}], eventQueueSize=[{shared.eventQueue.qsize()}], dataQueueSize=[{shared.dataQueue.qsize()}]')
         except OSError:
             if shared.DEBUG:
-                print('writeLogFile: EOError exception. giving up.', file=sys.stderr, flush=True)
+                print('writeToLog_files: EOError exception. giving up.', file=sys.stderr, flush=True)
             break
-        except Exception as error:
+        except Exception as e:
             if shared.DEBUG:
-                print(f'writeLogFile: Exception at line ({sys.exc_info()[2].tb_lineno}): [{error}]', file=sys.stderr, flush=True)
-            continue
+                print(f'writeToLog_files: Exception at line ({sys.exc_info()[2].tb_lineno}): [{e}]', file=sys.stderr, flush=True)
 
-        #print(f'logwriter: received message [{msgLogLevel}][{sMsg}]', file=sys.stderr, flush=True)
-        match msgLogLevel:
-            case shared.L_STATSONPROCNAME:
-                setproctitle.setproctitle(f'datacopy: log writer [{sMsg}]')
-                continue
-            case shared.L_INFO:
-                print(f'\n{str(datetime.now())}: {sMsg}', file=sys.stdout, flush=True)
-                if logFile:
-                    try:
-                        print(f'{str(datetime.now())}: {sMsg}', file=logFile, flush=True)
-                    except Exception:
-                        pass
-                continue
-
-            case shared.L_DEBUG:
-                print(sMsg, file=sys.stderr, flush=True)
-                continue
-
-            case shared.L_STATS:
-                if statsFile:
-                    try:
-                        print(sMsg, file=statsFile, flush=True)
-                    except Exception:
-                        pass
-                continue
-
-            case shared.L_DUMPCOLS:
-                dumpColNames = sMsg
-                continue
-
-            case shared.L_DUMPDATA:
-                if shared.DEBUG or shared.DUMP_ON_ERROR:
-                    try:
-                        dumpFile = open( f'{sLogFilePrefix}.DUMP', 'w', encoding = 'utf-8')
-                        dumper=csv.writer(dumpFile, delimiter = shared.DUMPFILE_SEP, quoting = csv.QUOTE_MINIMAL)
-                        dumper.writerow(dumpColNames)
-                        dumper.writerows(shared.encodeSpecialChars(sMsg))
-                        dumpFile.close()
-                    except Exception:
-                        pass
-                continue
-
-            case shared.L_OPEN:
-                try:
-                    print(f'writeLogFile: opening [{sMsg}]', file=sys.stderr, flush=True)
-                    sLogFilePrefix = sMsg
-                    logFile = open( f'{sMsg}.running.log', 'a', encoding = 'utf-8')
-                except Exception as error:
-                    print(f'writeLogFile: could not open log file [{sMsg}]: [{error}]', file=sys.stderr, flush=True)
-                try:
-                    statsFile = open( f'{sMsg}.stats', 'a', encoding = 'utf-8')
-                except Exception as error:
-                    print(f'writeLogFile: could not open stats file [{sMsg}]: [{error}]', file=sys.stderr, flush=True)
-                continue
-
-            case shared.L_STREAM_START:
-                shared.idleSecsObserved.value = 0
-                rStart = timer()
-                if statsFile:
-                    try:
-                        print(shared.statsFormat.format(datetime.now().strftime('%Y%m%d%H%M%S.%f'), shared.executionID, 'streamStart', sMsg, 0, 0, shared.parallelReaders ), file=statsFile, flush=True)
-                    except Exception:
-                        pass
-                continue
-
-            case shared.L_STREAM_END:
-                if statsFile:
-                    try:
-                        print(shared.statsFormat.format(datetime.now().strftime('%Y%m%d%H%M%S.%f'), shared.executionID, 'streamEnd', sMsg, shared.idleSecsObserved.value, timer()-rStart, 0 ), file=statsFile, flush=True)
-                    except Exception:
-                        pass
-                continue
-
-            case shared.L_CLOSE:
-                if logFile:
-                    logFile.close()
-                    logFile=None
-                    if shared.ErrorOccurred.value:
-                        sLogFileFinalName = f'{sLogFilePrefix}.ERROR.log'
-                    else:
-                        sLogFileFinalName = f'{sLogFilePrefix}.ok.log'
-                    try:
-                        os.rename(f'{sLogFilePrefix}.running.log', sLogFileFinalName)
-                    except Exception:
-                        pass
-                continue
-
-            case shared.L_END:
-                if shared.DEBUG:
-                    print('writeLogFile: received stop message.', file=sys.stderr, flush=True)
-                bKeepGoing = False
+        if shared.COLLECT_MEMORY_STATS and memoryStatsFile:
+            if timer() > collectMemoryStatsNextTime:
+                monitor_memory()
+                collectMemoryStatsNextTime = timer()+shared.collectMemoryStatsIntervalSecs
 
     if shared.DEBUG:
-        print('writeLogFile: exiting...', file=sys.stderr, flush=True)
+        print('writeToLog_files: exiting...', file=sys.stderr, flush=True)
+    setproctitle.setproctitle('datacopy: log file writer, ended')

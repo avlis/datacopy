@@ -1,5 +1,0 @@
-cx_Oracle
-psycopg2
-mariadb
-mysql-connector-python
-databricks-sql-connector

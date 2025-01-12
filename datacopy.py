@@ -11,15 +11,14 @@ script to copy loads of data between databases
     -- jobs.csv file (csv, tab delimited)
     -- log file prefix
 
-or by ENV var:
+or by ENV vars, some examples:
     -- CONNECTIONS_FILE
     -- JOB_FILE
-    -- LOG_FILE
+    -- LOG_NAME
     -- TEST_QUERIES (dry run, default no)
     -- QUEUE_SIZE (default 256)
     -- QUEUE_FB4NEWR (queue free before new read, when reuse_writers=yes, default 1/3 off queue)
     -- REUSE_WRITERS (default no)
-    -- STOP_JOBS_ON_ERROR (default yes)
     -- DUMP_ON_ERROR (default no)
     -- DUMPFILE_SEP (default '|')
     -- STATS_IN_JSON (default no)
@@ -31,6 +30,8 @@ import sys
 import os
 import signal
 
+from time import sleep
+
 import multiprocessing as mp
 mp.set_start_method('fork')
 
@@ -38,43 +39,33 @@ import setproctitle
 
 import modules.shared as shared
 import modules.logging as logging
+from modules.logging import logLevel as logLevel
 import modules.connections as connections
 import modules.jobs as jobs
 import modules.jobshandler as jobshandler
+
 
 def sig_handler(signum, frame):
     '''handles signals'''
 
     p = mp.current_process()
+    if shared.DEBUG:
+        print(f'process [{p.name}] received signal [{signum}]', file=sys.stderr, flush=True)
     if p.name == 'MainProcess':
-        logging.statsPrint('stopRequestedError', 'MainThread', 0, 0, 0)
-        logging.logPrint(f'sigHander: Error: stop signal received ({signum},{frame}), signaling stop to threads...')
-        shared.ErrorOccurred.value = True
-        shared.Working.value = False
-
-def printSharedVariables():
-    '''prints shared variables'''
-    variables = dir(shared)
-
-    for variable in variables:
-        try:
-            value = getattr(shared, variable)
-            if isinstance(value, (int, bool, str)) and variable[1:2] != '_':
-                print(f'{variable}: {value}', file=sys.stderr, flush=True)
-        except:
-            continue
+        logging.statsPrint('stopRequested', None, 0, 0, 0)
+        logging.processError(p_message=f'sigHander: Error: stop signal received ({signum})', p_dontSendToStats=True, p_stop=True, p_exitCode=15)
 
 # MAIN
 def Main():
     '''entry point'''
 
+    if shared.DEBUG:
+        print ('start of Main()', file=sys.stderr, flush=True)
+
     signal.signal(signal.SIGINT, sig_handler)
     signal.signal(signal.SIGTERM, sig_handler)
 
-    if len(sys.argv) < 4:
-        shared.logFileName = os.getenv('LOG_FILE','')
-    else:
-        shared.logFileName = sys.argv[3]
+    #argv[3] is now interpreted on shared
 
     if len(sys.argv) < 3:
         q_filename = os.getenv('JOB_FILE','jobs.csv')
@@ -87,53 +78,83 @@ def Main():
         c_filename = sys.argv[1]
 
     setproctitle.setproctitle(f'datacopy: main thread [{q_filename}]')
+    shared.applicationName = 'datacopy[{q_filename}]'
 
-    if shared.DEBUG:
-        print ('start of Main()', file=sys.stderr, flush=True)
-        printSharedVariables()
-
-    logging.logThread = mp.Process(target=logging.writeLogFile)
+    logging.logThread = mp.Process(target=logging.writeToLog_files)
     logging.logThread.start()
 
-    connections.loadConnections(c_filename)
-    jobs.loadJobs(q_filename)
+    logging.openLog()
 
-    jobs.preCheck()
-    jobshandler.copyData()
+    logging.logPrint(f"datacopy version [{os.getenv('BASE_VERSION','<unkown>')}][{os.getenv('VERSION','<unkown>')}] starting")
+    logging.logPrint(f'executionID: [{shared.executionID}]')
+    if shared.DEBUG:
+        logging.logPrint('copyData()', logLevel.DUMP_SHARED)
 
-    logging.logPrint('exited copydata!', shared.L_DEBUG)
+    if shared.Working.value:
+        connections.loadConnections(c_filename)
+
+    if shared.Working.value:
+        jobs.loadJobs(q_filename)
+
+    if shared.Working.value:
+        jobs.preCheck()
+
+    if shared.Working.value:
+        cd = mp.Process(target=jobshandler.jobManager)
+        cd.start()
+        while shared.Working.value:
+            sleep(2)
+        cd.join()
+
+    logging.logPrint('exited copydata!', logLevel.DEBUG)
 
     #pylint: disable=consider-using-dict-items
-    logging.logPrint(f'making sure all read threads are terminated [{len(shared.readP)}]...', shared.L_DEBUG)
+    logging.logPrint(f'making sure all read threads are terminated [{len(shared.readP)}]...', logLevel.DEBUG)
     for i in shared.readP:
         try:
             shared.readP[i].join(timeout=1)
             shared.readP[i].terminate()
             shared.readP[i].join(timeout=1)
         except Exception as error:
-            logging.logPrint(f'error terminating read thread {i} ({sys.exc_info()[2].tb_lineno}): [{error}]', shared.L_DEBUG)
+            logging.logPrint(f'error terminating read thread {i} ({sys.exc_info()[2].tb_lineno}): [{error}]', logLevel.DEBUG)
             continue
 
-    logging.logPrint(f'making sure all write threads are terminated [{len(shared.writeP)}]...', shared.L_DEBUG)
+    logging.logPrint(f'making sure all write threads are terminated [{len(shared.writeP)}]...', logLevel.DEBUG)
     for i in shared.writeP:
         try:
             shared.readP[i].join(timeout=1)
             shared.writeP[i].terminate()
             shared.writeP[i].join(timeout=1)
         except Exception as error:
-            logging.logPrint(f'error terminating write thread {i} ({sys.exc_info()[2].tb_lineno}): [{error}]', shared.L_DEBUG)
+            logging.logPrint(f'error terminating write thread {i} ({sys.exc_info()[2].tb_lineno}): [{error}]', logLevel.DEBUG)
             continue
 
-    logging.logPrint('all worker threads terminated and joined.', shared.L_DEBUG)
+    logging.logPrint('all worker threads terminated and joined.', logLevel.DEBUG)
 
-    if shared.ErrorOccurred.value:
-        logging.closeLogFile(6)
+    if shared.ErrorOccurred.value and shared.exitCode.value == 0 :
+        with shared.exitCode.get_lock():
+            shared.exitCode.value == 32
 
-    else:
-        logging.closeLogFile(0)
+    logging.closeLog()
+
+    if shared.DEBUG:
+        print('closeLog: making sure log thread is terminated...', file=sys.stderr, flush=True)
+    try:
+        logging.logThread.join(timeout=1)
+        logging.logThread.terminate()
+        logging.logThread.join(timeout=1)
+
+    except Exception as e:
+        print(f'closeLog: error terminating log thread ({sys.exc_info()[2].tb_lineno}): [{e}]', file=sys.stderr, flush=True)
+
+    if shared.DEBUG:
+        print('closeLog: log thread terminated and joined.', file=sys.stderr, flush=True)
+
 
     if shared.DEBUG:
         print ('end of Main()', file=sys.stderr, flush=True)
+
+    sys.exit(shared.exitCode.value)
 
 if __name__ == '__main__':
     Main()

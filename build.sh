@@ -29,13 +29,13 @@ if [ -z "${SKIP_BUILD_BASE}" ]; then
 	docker rm baseexport 2>&1 >/dev/null
 	docker rmi ${BASENAME}:build ${BASENAME}:flat
 
-	if [ -z "${SKIP_FETCH_PYTHON}" ]; then
+	if [ -z "${SKIP_PULL_PYTHON}" ]; then
 		echo "*** refreshing ${BASEIMAGE}"
 		docker pull ${BASEIMAGE}
 	fi
 
 	echo "*** building ${BASENAME}:build"
-	if 	docker build -t ${BASENAME}:build -f ${BASEDOCKERFILE} --build-arg BASEIMAGE=${BASEIMAGE} ${PROXY_ARGS} "$@" . && \
+	if 	docker build --shm-size=2G -t ${BASENAME}:build -f ${BASEDOCKERFILE} --build-arg BASEIMAGE=${BASEIMAGE} ${PROXY_ARGS} "$@" . && \
 		docker run --name baseexport ${BASENAME}:build /bin/true && \
 		docker export baseexport | docker import - ${BASENAME}:flat ; then
 		docker rm baseexport 2>&1 >/dev/null

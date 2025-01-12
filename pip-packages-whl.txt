@@ -4,3 +4,5 @@ requests
 pandas
 pyodbc
 mysql-connector-python
+databricks-sql-connector
+databricks-sdk
