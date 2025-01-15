@@ -279,6 +279,18 @@ def printSharedVariables(fromWhere:str):
 
     logPrint(f'--- end of dumping shared variables', logLevel.DEBUG)
 
+def init_json_file(p_file, date_function=shared.timestamp_readable) -> None:
+    if isinstance(date_function(),str):
+        print(f'[{{"start":"{date_function()}"}},', file=p_file, flush=True)
+    else:
+        print(f'[{{"start":{date_function()}}},', file=p_file, flush=True)
+
+def term_json_file(p_file, date_function=shared.timestamp_readable) -> None:
+    if isinstance(date_function(),str):
+        print(f'{{"stop":"{date_function()}"}}]', file=p_file, flush=True)
+    else:
+        print(f'{{"stop":{date_function()}}}]', file=p_file, flush=True)
+
 
 def writeToLog_files():
     '''
@@ -297,13 +309,6 @@ def writeToLog_files():
     dumpColNames = None
     dumpFile = None
     sLogFilePrefix = ''
-
-    def init_json_file(p_file) -> None:
-        print(f'[{{"start":{datetime.now().strftime('%Y%m%d%H%M%S.%f')}}},', file=p_file, flush=True)
-
-    def term_json_file(p_file) -> None:
-        print(f'{{"stop":{datetime.now().strftime('%Y%m%d%H%M%S.%f')}}}]', file=p_file, flush=True)
-
 
     bKeepGoing=True
     idleCount=0
@@ -408,7 +413,7 @@ def writeToLog_files():
 
                         if shared.STATS_IN_JSON:
                             statsFile = open( f'{message}.stats.json', 'a', encoding = 'utf-8')
-                            init_json_file(statsFile)
+                            init_json_file(statsFile, shared.statsTimestampFunction)
                         else:
                             statsFile = open( f'{message}.stats.csv', 'a', encoding = 'utf-8')
                     except Exception as e:
@@ -426,7 +431,7 @@ def writeToLog_files():
 
                             if shared.MEMORY_STATS_IN_JSON:
                                 memoryStatsFile = open( f'{message}.memory.json', 'a', encoding = 'utf-8')
-                                init_json_file(memoryStatsFile)
+                                init_json_file(memoryStatsFile, shared.memoryTimestampFunction)
                             else:
                                 memoryStatsFile = open( f'{message}.memory.csv', 'a', encoding = 'utf-8')
                         except Exception as e:
@@ -453,13 +458,13 @@ def writeToLog_files():
 
                     if statsFile:
                         if shared.STATS_IN_JSON:
-                            term_json_file(statsFile)
+                            term_json_file(statsFile, shared.statsTimestampFunction)
                         statsFile.flush()
                         statsFile.close()
                         statsFile = None
                     if memoryStatsFile:
                         if shared.MEMORY_STATS_IN_JSON:
-                            term_json_file(memoryStatsFile)
+                            term_json_file(memoryStatsFile, shared.memoryTimestampFunction)
                         memoryStatsFile.flush()
                         memoryStatsFile.close()
                         memoryStatsFile = None

@@ -18,7 +18,7 @@ from typing import Callable
 import pandas as pd
 
 
-#### Constants ##########################################################################
+#### Event fast "enum" ############################################################################
 
 E_NOOP = 0
 E_QUERY = 1
@@ -45,12 +45,14 @@ E_WRITE_ERROR = E_WRITE + E_ERROR
 E_WRITE_END = E_WRITE + E_END
 
 #reverse naming helper dict:
-
 eventsDecoder:dict = {}
 __local_vars=list((inspect.currentframe().f_locals.items()))
 for name, value in __local_vars:
     if name.startswith("E_"):
         eventsDecoder[value] = name
+
+
+#### timestamp utilities ##########################################################################
 
 def timestamp_compact() -> str:
     return datetime.now().strftime('%Y%m%d%H%M%S.%f')
@@ -60,6 +62,9 @@ def timestamp_readable() -> str:
 
 def timestamp_unix() -> float:
     return time()
+
+
+#### shared Constants #############################################################################
 
 applicationName = 'datacopy'
 
@@ -149,7 +154,7 @@ collectMemoryMainProcessID = psutil.Process(os.getpid())
 defaultFetchSize:int = 1024
 
 
-#### Shared Variables, but changed in single thread contexts ############################
+#### Shared Variables, but changed in single thread contexts ######################################
 
 connections:pd.DataFrame = None
 jobs:pd.DataFrame = None
@@ -175,7 +180,7 @@ maxQueueLenObserved:int = 0
 maxQueueLenObservedEvents:int = 0
 
 
-#### OBJECTS shared / edited in multithreads  ###########################################
+#### OBJECTS shared / edited in multithreads  #####################################################
 
 dataQueue:mp.Queue = mp.Queue(queueSize)
 ''' message format: just a bData object returned by cursor.fetchmany()'''
@@ -197,7 +202,7 @@ idleSecsObserved = mp.Value('i', 0)
 
 exitCode = mp.Value('i', 0)
 
-#### Utilities ##########################################################################
+#### Other Utilities ##############################################################################
 
 def encodeSpecialChars(p_in):
     '''convert special chars to escaped representation'''
