@@ -1,0 +1,7 @@
+#https://github.com/microsoft/pyright/blob/main/docs/configuration.md
+
+[tool.pyright]
+reportUnusedImport = true
+reportUnusedVariable = true
+reportUnreachableCode = true
+reportOptionalMemberAccess = false
