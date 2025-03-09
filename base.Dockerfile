@@ -1,7 +1,37 @@
-#databricks-sql-connector does not install properly on 3.13 yet
-ARG BASEIMAGE=python:3.12-slim
+ARG PYTHON_VER=3.13
+ARG BASEIMAGE=python:${PYTHON_VER}-slim
+ARG base_version="base-20250307-001-pyhton${PYTHON_VER}"
+FROM ${BASEIMAGE} AS builder
+
+LABEL base_version=${base_version}
+
+ENV PYTHON_VER=${PYTHON_VER}
+ENV BASE_VERSION=${base_version}
+
+# COMPILER TOOLS TO pip packages that need compiling
+RUN apt-get update \
+	&& ACCEPT_EULA=Y apt-get -y install g++ libpq-dev libmariadb-dev #python3-dev libmariadb3   
+
+WORKDIR /app
+
+COPY pip-packages-need-compiling.txt /app/
+
+RUN pip3 install --upgrade pip
+RUN pip3 install -r pip-packages-need-compiling.txt
+
+
+################ STAGE 2  ################
+
 FROM ${BASEIMAGE}
-ARG base_version="base-20250112-001"
+
+ARG PYTHON_VER
+ARG BASEIMAGE
+ARG base_version
+
+ENV PYTHON_VER=${PYTHON_VER}
+ENV BASE_VERSION=${base_version}
+
+COPY --from=builder /usr/local/lib/python${PYTHON_VER}/site-packages /usr/local/lib/python${PYTHON_VER}/site-packages
 
 #make sure you run docker build with --shm-size=2G or similar
 ENV TMPDIR=/dev/shm
@@ -9,12 +39,11 @@ ENV TMPDIR=/dev/shm
 #ARG oracle_dl_folder=2116000
 #ARG oracle_opt_folder=21_16
 #ARG oracle_version=21.16.0.0.0dbru
-ARG oracle_dl_folder=2360000
-ARG oracle_opt_folder=23_6
-ARG oracle_version=23.6.0.24.10
+ARG oracle_dl_folder=2370000
+ARG oracle_opt_folder=23_7
+ARG oracle_version=23.7.0.25.01
 
-LABEL base_version=${base_version}
-ENV BASE_VERSION=${base_version}
+
 RUN echo "#!/bin/bash\nalias ll='ls -lah'\n\nexport BASE_VERSION=${BASE_VERSION}" > /etc/profile.d/base.sh ; chmod +x /etc/profile.d/base.sh
 
 # BASE packages
@@ -49,14 +78,10 @@ RUN curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/insta
 
 WORKDIR /app
 
-COPY pip-packages-*.txt /app/
+COPY pip-packages-whl.txt /app/
+
+RUN pip3 install --upgrade pip
 RUN pip3 install -r pip-packages-whl.txt
-
-# COMPILER TOOLS TO pip packages that need compiling
-RUN apt-get update \
-	&& ACCEPT_EULA=Y apt-get -y install g++ libpq-dev libmariadb-dev #python3-dev libmariadb3   
-
-RUN pip3 install -r pip-packages-need-compiling.txt
 
 # CLEANUP
 RUN rm -f pip-packages-*.txt; \

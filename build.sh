@@ -12,7 +12,7 @@ if [ -z "${no_proxy}" ]; then
 	PROXY_ARGS="${PROXY_ARGS} --build-arg NO_PROXY=${NO_PROXY}"
 fi
 
-BASEIMAGE=${BASEIMAGE:-python:3.12.8-slim}
+BASEIMAGE=${BASEIMAGE:-python:3.13-slim}
 
 BASENAME=${BASENAME:-datacopy}
 FINALNAME=${FINALNAME:-datacopy}
