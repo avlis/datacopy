@@ -133,23 +133,18 @@ def loadConnections(p_filename:str):
         conns[cName] = nc
 
     shared.connections = conns
-    if shared.DEBUG:
-        buffer=json.dumps(conns, indent=2)
-        logging.logPrint(f'final connections data:\n{buffer}\n', logLevel.DEBUG)
+    if shared.DEBUG: buffer=json.dumps(conns, indent=2) ; logging.logPrint(f'final connections data:\n{buffer}\n', logLevel.DEBUG)
 
 def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_mode = 'w'):
-    '''creates connection objects to sources or destinations
-
-    returns an array of connections, if connecting to databases, or an array of tupples of (file, stream), if driver == csv
-
+    ''' creates connection objects to sources or destinations
+        returns an array of connections, if connecting to databases, or an array of tupples of (file, stream), if driver == csv
     '''
 
     nc = {}
 
-    if p_name in shared.connections:
-        c = shared.connections[p_name]
+    c = shared.connections[p_name]
 
-    logging.logPrint(f'({p_name}): trying to connect...', logLevel.DEBUG)
+    logging.logPrint(f'({p_name}): trying to connect...', logLevel.DEBUG, reportFrom=True)
 
     match c['driver']:
         case 'pyodbc':
@@ -160,6 +155,10 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                     # used to be:
                     #nc[x]=pyodbc.connect(driver='{ODBC Driver 18 for SQL Server}', server=c['server'], database=c['database'], user=c['user'], password=c['password'], encoding = 'UTF-8', nencoding = 'UTF-8', readOnly = p_readOnly, trustservercertificate = c['trustservercertificate'] )
                     nc[x]=pyodbc.connect(f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={c['server']};DATABASE={{{c['database']}}};UID={{{c['user']}}};PWD={{{c['password']}}};ENCODING=UTF-8;TRUSTSERVERCERTIFICATE={c['trustservercertificate']};APP={shared.applicationName}")
+                    try:
+                        nc[x].timeout = shared.idleTimeoutSecs
+                    except Exception as e:
+                        logging.logPrint(f'({p_name}): exception [{e}] happened while trying to set timeout to [{shared.idleTimeoutSecs}]', logLevel.DEBUG, reportFrom=True)
             except (Exception, pyodbc.DatabaseError) as e:
                 logging.processError(p_e=e, p_message=p_name, p_stop=True, p_exitCode=2)
                 return
@@ -179,7 +178,14 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                     try:
                         nc[x].client_identifier=shared.applicationName
                     except Exception as e:
-                        logging.logPrint(f'({p_name}): could not set client_identifier on connection: [{e}]', logLevel.DEBUG)
+                        logging.logPrint(f'({p_name}): could not set client_identifier on connection: [{e}]', logLevel.DEBUG, reportFrom=True)
+                        pass #do not remove as on production we delete the previous line
+                    try:
+                        nc[x].call_timeout = (shared.idleTimeoutSecs * 1000) # in milisecs
+                    except Exception as e:
+                        logging.logPrint(f'({p_name}): exception [{e}] happened while trying to set call_timeout to [{shared.idleTimeoutSecs}]', logLevel.DEBUG, reportFrom=True)
+                        pass #do not remove as on production we delete the previous line
+
             except Exception as e:
                 logging.processError(p_e=e, p_message=p_name, p_stop=True, p_exitCode=2)
                 return
@@ -194,7 +200,8 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                     database=c['database'],
                     user=c['user'],
                     password = c['password'],
-                    application_name=shared.applicationName
+                    application_name=shared.applicationName,
+                    connect_timeout = shared.connectionTimeoutSecs
                 )
                 for x in range(p_qtd):
                     nc[x] = tpool.getconn()
@@ -212,13 +219,15 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                         database=c['database'],
                         user=c['user'],
                         password = c['password'],
+                        connection_timeout = shared.connectionTimeoutSecs
 
                     )
                     try:
                         nc[x]._client_name = shared.applicationName
                     except Exception as e:
-                        logging.logPrint(f'({p_name}): could not set client_name on connection: [{e}]', logLevel.DEBUG)
-            except Exception as error:
+                        logging.logPrint(f'({p_name}): could not set client_name on connection: [{e}]', logLevel.DEBUG, reportFrom=True)
+                        pass #do not remove as on production we delete the previous line
+            except Exception as e:
                 logging.processError(p_e=e, p_message=p_name, p_stop=True, p_exitCode=2)
                 return
 
@@ -230,12 +239,14 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                         host=c['server'],
                         database=c['database'],
                         user=c['user'],
-                        password = c['password']
+                        password = c['password'],
+                        connection_timeout = shared.connectionTimeoutSecs
                     )
                     try:
                         nc[x]._client_name = shared.applicationName
                     except Exception as e:
-                        logging.logPrint(f'({p_name}): could not set client_name on connection: [{e}]', logLevel.DEBUG)
+                        logging.logPrint(f'({p_name}): could not set client_name on connection: [{e}]', logLevel.DEBUG, reportFrom=True)
+                        pass #do not remove as on production we delete the previous line
             except Exception as e:
                 logging.processError(p_e=e, p_message=p_name, p_stop=True, p_exitCode=2)
                 return
@@ -250,7 +261,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                 client_id=c['user']
                 client_secret=c['password']
 
-                logging.logPrint(f'({p_name}): databricks auth: trying to get OAuth SP with client_id=[{client_id}], client_secret [{client_secret}], server_name=[{server_name}]', logLevel.DEBUG)
+                logging.logPrint(f'({p_name}): databricks auth: trying to get OAuth SP with client_id=[{client_id}], client_secret [{client_secret}], server_name=[{server_name}]', logLevel.DEBUG, reportFrom=True)
                 def dbricks_connection_provider():
                     from databricks.sdk.core import Config as dbricksConfig
                     from databricks.sdk.core import oauth_service_principal as dbricksOauthSP
@@ -267,24 +278,26 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
 
                 try:
                     token = dbricks_connection_provider().oauth_token()
-                    access_token = token.access_token
+                    #access_token = token.access_token
 
                 except Exception as e:
                     logging.processError(p_e=e, p_message=f'({p_name}): databricks auth, trying to retrieve Token', p_stop=True, p_exitCode=2)
                     return
 
-                logging.logPrint(f'({p_name}): databricks auth: got Token: [{token}]', logLevel.DEBUG)
+                logging.logPrint(f'({p_name}): databricks auth: got Token: [{token}]', logLevel.DEBUG, reportFrom=True)
 
                 for x in range(p_qtd):
-                    logging.logPrint(f'({p_name}): databricks[{x}]: establishing connection...', logLevel.DEBUG)
+                    logging.logPrint(f'({p_name}): databricks[{x}]: establishing connection...', logLevel.DEBUG, reportFrom=True)
                     nc[x]=dbricksSql.connect(
                         server_hostname=c['server'],
                         http_path=c['database'],
                         credentials_provider = dbricks_connection_provider,
                         #access_token = access_token,
-                        client_name=shared.applicationName
+                        client_name=shared.applicationName,
+                        connection_timeout = shared.connectionTimeoutSecs,
+                        query_timeout=shared.idleTimeoutSecs
                     )
-                    logging.logPrint(f'({p_name}): databricks[{x}]: connected.', logLevel.DEBUG)
+                    logging.logPrint(f'({p_name}): databricks[{x}]: connected.', logLevel.DEBUG, reportFrom=True)
             except Exception as e:
                 logging.processError(p_e=e, p_message=p_name, p_stop=True, p_exitCode=2)
                 return
@@ -297,14 +310,17 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
 
             for _path in _paths:
                 if not os.path.isdir(_path):
-                    logging.processError(p_message=f'({p_name}): directory does not exist [{_path}]', p_stop=True, p_exitCode=2)
-                    return
+                    try:
+                        os.makedirs(name=_path)
+                    except Exception as e:
+                        logging.processError(p_message=f'({p_name}): directory does not exist, and exception happened when trying to create it [{_path}]', p_stop=True, p_exitCode=2)
+                        return None
 
             sFileName = ''
-            logging.logPrint(f'({p_name}): dumping CSV files to {_paths}', logLevel.DEBUG)
+            logging.logPrint(f'({p_name}): dumping CSV files to {_paths}', logLevel.DEBUG, reportFrom=True)
             try:
                 _delim = shared.delimiter_decoder(c['delimiter'])
-                logging.logPrint('({p_name}): csv delimiter set to [{_delim}]', logLevel.DEBUG)
+                logging.logPrint(f'({p_name}): csv delimiter set to [{_delim}]', logLevel.DEBUG, reportFrom=True)
             except Exception:
                 if len(c['delimiter']) == 1:
                     _delim = c['delimiter']
@@ -316,7 +332,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                 _quote=csv.QUOTE_MINIMAL
 
             csv.register_dialect(p_name, delimiter = _delim, quoting = _quote)
-            logging.logPrint(f'({p_name}): registering csv dialect with delim=[{_delim}], quoting=[{_quote}]', logLevel.DEBUG)
+            logging.logPrint(f'({p_name}): registering csv dialect with delim=[{_delim}], quoting=[{_quote}]', logLevel.DEBUG, reportFrom=True)
             try:
                 if p_qtd > 1:
                     ipath=0
@@ -326,13 +342,13 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                             ipath += 1
                         else:
                             ipath = 0
-                        logging.logPrint(f'({p_name}): opening file=[{sFileName}], mode=[{p_mode}]', logLevel.DEBUG)
+                        logging.logPrint(f'({p_name}): opening file=[{sFileName}], mode=[{p_mode}]', logLevel.DEBUG, reportFrom=True)
                         newFile = open(sFileName, p_mode, encoding = 'utf-8')
                         newStream = csv.writer(newFile, dialect = p_name)
                         nc[x] = (newFile, newStream)
                 else:
                     sFileName = os.path.join(_paths[0], f'{p_tableName}.csv')
-                    logging.logPrint(f'({p_name}): opening file=[{sFileName}], mode=[{p_mode}]', logLevel.DEBUG)
+                    logging.logPrint(f'({p_name}): opening file=[{sFileName}], mode=[{p_mode}]', logLevel.DEBUG, reportFrom=True)
                     newFile = open(sFileName, p_mode, encoding = 'utf-8')
                     newStream = csv.writer(newFile, dialect = p_name)
                     nc[0] = (newFile, newStream)
@@ -343,10 +359,10 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
         sGetVersion = check_bd_version_cmd[c['driver']]
         if len(sGetVersion) > 0:
             cur = nc[0].cursor()
-            logging.logPrint(f'({p_name}): testing connection, getting version with [{sGetVersion}]...', logLevel.DEBUG)
+            logging.logPrint(f'({p_name}): testing connection, getting version with [{sGetVersion}]...', logLevel.DEBUG, reportFrom=True)
             cur.execute(sGetVersion)
             db_version = cur.fetchone()
-            logging.logPrint(f'({p_name}): ok, connected to DB version: {db_version}', logLevel.DEBUG)
+            logging.logPrint(f'({p_name}): ok, connected to DB version: {db_version}', logLevel.DEBUG, reportFrom=True)
             logging.logPrint(f'({p_name}): connected')
             cur.close()
     except Exception as e:
@@ -373,23 +389,24 @@ def initCursor(p_conn, p_jobID:int, p_source:str, p_fetchSize:int):
     # mysql, mariaDB: use unbuffered cursors
 
     try:
-        logging.logPrint(f'({p_source}): trying to get server side cursor...', logLevel.DEBUG, p_jobID=p_jobID)
+        logging.logPrint(f'({p_source}): trying to get server side cursor...', logLevel.DEBUG, p_jobID=p_jobID, reportFrom=True)
         newCursor = p_conn.cursor(name = f'jobid-{p_jobID}')
-        logging.logPrint(f'({p_source}): got server side cursor!', logLevel.DEBUG, p_jobID=p_jobID)
-    except Exception as e:
-        logging.logPrint(f'({p_source}): server side cursor did not work, trying to get an unbuffered cursor', logLevel.DEBUG, p_jobID=p_jobID)
+        logging.logPrint(f'({p_source}): got server side cursor!', logLevel.DEBUG, p_jobID=p_jobID, reportFrom=True)
+    except:
+        logging.logPrint(f'({p_source}): server side cursor did not work, trying to get an unbuffered cursor', logLevel.DEBUG, p_jobID=p_jobID, reportFrom=True)
         try:
             newCursor = p_conn.cursor(buffered=False)
-            logging.logPrint(f'({p_source}): got unbuffered cursor!', logLevel.DEBUG, p_jobID=p_jobID)
-        except Exception as e:
-            logging.logPrint(f'({p_source}): unbuffered cursor did not work, getting a normal cursor', logLevel.DEBUG, p_jobID=p_jobID)
+            logging.logPrint(f'({p_source}): got unbuffered cursor!', logLevel.DEBUG, p_jobID=p_jobID, reportFrom=True)
+        except:
+            logging.logPrint(f'({p_source}): unbuffered cursor did not work, getting a normal cursor', logLevel.DEBUG, p_jobID=p_jobID, reportFrom=True)
             newCursor = p_conn.cursor()
-            logging.logPrint(f'({p_source}): got a normal cursor.', logLevel.DEBUG, p_jobID=p_jobID)
+            logging.logPrint(f'({p_source}): got a normal cursor.', logLevel.DEBUG, p_jobID=p_jobID, reportFrom=True)
     try:
         #only works on postgres...
         newCursor.itersize = p_fetchSize
-        logging.logPrint(f'({p_source}): set cursor itersize to [{p_fetchSize}]', logLevel.DEBUG, p_jobID=p_jobID)
+        logging.logPrint(f'({p_source}): set cursor itersize to [{p_fetchSize}]', logLevel.DEBUG, p_jobID=p_jobID, reportFrom=True)
     except Exception as error:
-        logging.logPrint(f'({p_source}): could not set cursor itersize: [{error}]', logLevel.DEBUG, p_jobID=p_jobID)
+        logging.logPrint(f'({p_source}): could not set cursor itersize: [{error}]', logLevel.DEBUG, p_jobID=p_jobID, reportFrom=True)
+        pass #do not remove as on production we delete the previous line
 
     return newCursor

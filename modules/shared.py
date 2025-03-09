@@ -79,9 +79,13 @@ SCREEN_STATS:bool = bool(os.getenv('SCREEN_STATS','yes') == 'yes')
 
 SCREEN_STATS_TO_STDOUT:bool = bool(os.getenv('SCREEN_STATS_OUTPUT','stderr') == 'stdout')
 
-DEBUG:bool = bool(os.getenv('DEBUG','no') == 'yes')
 DEBUG_TO_STDERR:bool = bool(os.getenv('DEBUG_TO_STDERR','no') == 'yes')
 DEBUG_TO_LOG:bool = bool(os.getenv('DEBUG_TO_LOG','no') == 'yes')
+
+if DEBUG_TO_LOG or DEBUG_TO_STDERR:
+    DEBUG=True
+else:
+    DEBUG:bool = bool(os.getenv('DEBUG','no') == 'yes')
 
 DUMP_ON_ERROR:bool = bool(os.getenv('DUMP_ON_ERROR','no') == 'yes')
 dumpFileSeparator:str = os.getenv('DUMPFILE_SEP','|')
@@ -89,7 +93,7 @@ dumpFileSeparator:str = os.getenv('DUMPFILE_SEP','|')
 executionID:str = os.getenv('EXECUTION_ID',datetime.now().strftime('%Y%m%d%H%M%S.%f'))
 
 logTimestampFormat = os.getenv('LOG_TIMESTAMP_FORMAT','date')
-logTimestampFunction:Callable[[], str | float] = None
+logTimestampFunction:Callable[[], str | float] = None #type: ignore
 
 match logTimestampFormat:
     case 'linux':
@@ -100,7 +104,7 @@ match logTimestampFormat:
         logTimestampFunction=timestamp_readable
 
 statsTimestampFormat = os.getenv('STATS_TIMESTAMP_FORMAT','date')
-statsTimestampFunction:Callable[[], str | float] = None
+statsTimestampFunction:Callable[[], str | float] = None #type: ignore
 
 match statsTimestampFormat:
     case 'linux':
@@ -111,7 +115,7 @@ match statsTimestampFormat:
         statsTimestampFunction=timestamp_readable
 
 memoryTimestampFormat = os.getenv('MEMORY_STATS_TIMESTAMP_FORMAT','date')
-memoryTimestampFunction:Callable[[], str | float] = None
+memoryTimestampFunction:Callable[[], str | float] = None # type: ignore
 
 match memoryTimestampFormat:
     case 'linux':
@@ -135,7 +139,9 @@ else:
 parallelReaders:int = int(os.getenv('PARALLEL_READERS','1'))
 parallelReadersLaunchInterval:float = float(os.getenv('PARALLEL_READERS_LAUNCH_INTERVAL','0.1'))
 
-idleTimetoutSecs:int = int(os.getenv('IDLE_TIMEOUT_SECS','0'))
+idleTimeoutSecs:int = int(os.getenv('IDLE_TIMEOUT_SECS','0'))
+connectionTimeoutSecs:int = int(os.getenv('CONNECTION_TIMEOUT_SECS','22'))
+
 
 COLLECT_MEMORY_STATS:bool = bool(os.getenv('COLLECT_MEMORY_STATS','no') == 'yes')
 collectMemoryStatsIntervalSecs:float = float(os.getenv('COLLECT_MEMORY_STATS_INTERVAL_SECS','1'))
@@ -156,8 +162,8 @@ defaultFetchSize:int = 1024
 
 #### Shared Variables, but changed in single thread contexts ######################################
 
-connections:pd.DataFrame = None
-jobs:pd.DataFrame = None
+connections:pd.DataFrame = None # type: ignore
+jobs:pd.DataFrame = None #type: ignore
 
 PutConn = {}
 PutData = {}

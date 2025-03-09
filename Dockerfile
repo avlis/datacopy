@@ -1,6 +1,6 @@
 ARG BASENAME=datacopy
 FROM ${BASENAME}:flat
-ARG version="20250112-001"
+ARG version="20250309-004"
 LABEL version=${version}
 ENV VERSION=${version}
 RUN echo "export VERSION=${VERSION}" >> /etc/profile.d/datacopy.sh ; chmod +x /etc/profile.d/datacopy.sh

@@ -3,18 +3,17 @@
 #pylint: disable=invalid-name, broad-except, bare-except, line-too-long
 import os
 import sys
-from datetime import datetime
-from time import sleep, time
-from timeit import default_timer as timer
+import setproctitle
 import multiprocessing as mp
-
 import queue
-import csv
 import inspect
 
-from enum import Enum
+from time import sleep
+from timeit import default_timer as timer
 
-import setproctitle
+import csv
+from enum import Enum
+from typing import Optional
 
 import modules.shared as shared
 
@@ -43,12 +42,14 @@ memoryStatsFile = None
 
 #### "Public" stuff #####################################################################
 
-def logPrint(p_message, p_logLevel:int=logLevel.INFO, p_jobID:int=None, p_threadID:int=None, nested:bool=False):
+def logPrint(p_message, p_logLevel:logLevel=logLevel.INFO, *, p_jobID:Optional[int]=None, p_threadID:Optional[int]=None, nested:bool=False, reportFrom:bool=False):
     ''' sends message to the queue that manages logging'''
 
-    where:str = None
-    message = None
-    jobName:str = None
+    where:Optional[str] = None
+    calledFrom:Optional[str] = None
+    message:Optional[str] = None
+
+    jobName:Optional[str] = None
 
     if p_logLevel == logLevel.DEBUG and not shared.DEBUG:
         return
@@ -63,8 +64,12 @@ def logPrint(p_message, p_logLevel:int=logLevel.INFO, p_jobID:int=None, p_thread
         case _:
             if nested:
                 where = whoAmI(3)
+                if reportFrom:
+                    calledFrom = whoAmI(4)
             else:
                 where = whoAmI()
+                if reportFrom:
+                    calledFrom = whoAmI(3)
             message = p_message
 
             if p_jobID is None:
@@ -73,9 +78,9 @@ def logPrint(p_message, p_logLevel:int=logLevel.INFO, p_jobID:int=None, p_thread
                 jobName=f'[{getJobName(p_jobID)}]'
 
     if message is not None:
-        shared.logQueue.put( ( p_logLevel, message, p_jobID, p_threadID, jobName, where ), block=True, timeout=shared.idleTimetoutSecs)
+        shared.logQueue.put( ( p_logLevel, message, p_jobID, p_threadID, jobName, where, calledFrom ), block=True, timeout=shared.idleTimeoutSecs)
 
-def statsPrint(p_type:str, p_jobID:int, p_recs:int, p_secs:float, p_threads:int):
+def statsPrint(p_type:str, p_jobID:Optional[int], p_recs:int, p_secs:float, p_threads:int):
     '''sends stat messages to the log queue'''
 
     jobName:str = 'global'
@@ -83,9 +88,9 @@ def statsPrint(p_type:str, p_jobID:int, p_recs:int, p_secs:float, p_threads:int)
         jobName = getJobName(p_jobID)
 
     sMsg = shared.statsFormat.format(shared.statsTimestampFunction(), shared.executionID, p_type, jobName, p_recs, p_secs, p_threads )
-    shared.logQueue.put( ( logLevel.STATS, sMsg, None, None, None, None ) )
+    shared.logQueue.put( ( logLevel.STATS, sMsg, None, None, None, None, None ) )
 
-def processError(p_e:Exception=None, p_stack:str=None, p_message:str=None, p_jobID:int=None, p_stop:bool=None, p_dontSendToStats:bool=False, p_threadID:int=None, p_exitCode:int=None) -> None:
+def processError(p_e:Optional[Exception]=None, p_stack:Optional[str]=None, p_message:Optional[str]=None, p_jobID:Optional[int]=None, p_stop:Optional[bool]=None, p_dontSendToStats:bool=False, p_threadID:Optional[int]=None, p_exitCode:Optional[int]=None) -> None:
     fromWhere = whoAmI()
     if p_threadID is not None:
         fromWhere=f'{fromWhere}#{p_threadID}'
@@ -124,14 +129,13 @@ def processError(p_e:Exception=None, p_stack:str=None, p_message:str=None, p_job
 def openLog():
     '''setups the log'''
     sLogFilePrefix = shared.logName
-    shared.logQueue.put( (logLevel.OPEN, sLogFilePrefix, None, None, None, None) )
+    shared.logQueue.put( (logLevel.OPEN, sLogFilePrefix, None, None, None, None, None) )
 
 def closeLog():
     '''makes sure the log file is properly handled.'''
 
     def print_message(message:str):
-        if shared.DEBUG:
-            print(message, file=sys.stderr, flush=True)
+        if shared.DEBUG: print(message, file=sys.stderr, flush=True)
 
     def process_remaining_logs(loopTimeout:int, stage:int):
         title=f'closeLog: waiting for empty log queue (stage {stage}):'
@@ -171,12 +175,12 @@ def closeLog():
         process_remaining_logs(3, 1)
 
         print_message(f'\ncloseLog: sending CLOSE to write log thread')
-        shared.logQueue.put( (logLevel.CLOSE, None, None, None, None, None) )
+        shared.logQueue.put( (logLevel.CLOSE, None, None, None, None, None, None) )
 
         process_remaining_logs(3, 2)
 
         print_message('closeLog: sending END to write log thread')
-        shared.logQueue.put( (logLevel.END, None, None, None, None, None) )
+        shared.logQueue.put( (logLevel.END, None, None, None, None, None, None) )
 
         process_remaining_logs(3, 3)
 
@@ -197,12 +201,17 @@ def whoAmI(stackLevel:int=2) -> str:
     returns modulename and function name. to use on logPrint or anywhere else.
     '''
 
-    modName = '<unknown>'
-    funcName = '<unknown>'
-    className = ''
+    modName:str = '<unknown>'
+    funcName:str = '<unknown>'
+    className:str = ''
+    lineNumber:int = 0
     try:
         frame = inspect.stack()[stackLevel]
         funcName = frame.function
+        try:
+            lineNumber = frame.lineno
+        except:
+            pass
         try:
             className = f".{frame.frame.f_locals['self'].__class__.__name__}"
         except:
@@ -210,7 +219,10 @@ def whoAmI(stackLevel:int=2) -> str:
         modName = inspect.getmodule(frame[0]).__name__ # type: ignore
     except:
         pass
-    return f'{modName}{className}.{funcName}'
+    if lineNumber > 0:
+        return f'{modName}{className}.{funcName}({lineNumber})'
+    else:
+        return f'{modName}{className}.{funcName}'
 
 
 def monitor_memory():
@@ -221,7 +233,8 @@ def monitor_memory():
     global memoryStatsFile
 
     timestamp = shared.memoryTimestampFunction()
-    totalMem = 0
+    totalMem:int = 0
+    processName: str = 'not known yet'
 
     try:
         # Get memory usage of the main process
@@ -233,6 +246,7 @@ def monitor_memory():
         print(memStr, file=memoryStatsFile, flush=True)
     except Exception as e:
         logPrint(f'error on main process: [{e}]', logLevel.DEBUG)
+        pass #do not remove as on production we delete the previous line
 
     # Get memory usage of child processes
     for child in shared.collectMemoryMainProcessID.children(recursive=True):
@@ -244,11 +258,13 @@ def monitor_memory():
             print(memStr, file=memoryStatsFile, flush=True)
         except Exception as e:
             logPrint(f'error on [{processName}]: [{e}]', logLevel.DEBUG)
+            pass #do not remove as on production we delete the previous line
     try:
         memStr = shared.memoryStatsFormat.format(timestamp, shared.executionID, totalMem, -1, '-', 'totalMemory')
         print(memStr, file=memoryStatsFile, flush=True)
     except Exception as e:
         logPrint(f'error on total mem: [{e}]', logLevel.DEBUG)
+        pass #do not remove as on production we delete the previous line
 
     logPrint(f'memory stats: [{totalMem}]', logLevel.DEBUG)
 
@@ -268,10 +284,10 @@ def printSharedVariables(fromWhere:str):
             value = getattr(shared, variable)
             #dont want to know about constants or internal objects with _ in name
             if isinstance(value, (int, bool, str, float)) and variable[1:2] != '_':
-                shared.logQueue.put( ( logLevel.DUMP_SHARED, value, None, None, None, f'{variable}({type(value).__name__})' ) , block=True, timeout=shared.idleTimetoutSecs)
+                shared.logQueue.put( ( logLevel.DUMP_SHARED, value, None, None, None, f'{variable}({type(value).__name__})', None ) , block=True, timeout=shared.idleTimeoutSecs)
 
             if type(value).__name__ == 'Synchronized':
-                shared.logQueue.put( ( logLevel.DUMP_SHARED, value.value, None, None, None, f'{variable}(mp.{type(value.value).__name__})' ), block=True, timeout=shared.idleTimetoutSecs)
+                shared.logQueue.put( ( logLevel.DUMP_SHARED, value.value, None, None, None, f'{variable}(mp.{type(value.value).__name__})', None ), block=True, timeout=shared.idleTimeoutSecs) # type: ignore
 
         except Exception as e:
             processError(p_e=e, p_message=f'something bad appened trying to dump shared variables: [{variable}]')
@@ -314,7 +330,7 @@ def writeToLog_files():
     idleCount=0
     while bKeepGoing:
         try:
-            (logLevel, message, jobID, threadID, jobName, where) = shared.logQueue.get( block=True, timeout = .1 )
+            (logLevel, message, jobID, threadID, jobName, where, calledFrom) = shared.logQueue.get( block=True, timeout = .1 ) # type: ignore
             idleCount = 0
 
             if logLevel == logLevel.STATSONPROCNAME:
@@ -331,7 +347,13 @@ def writeToLog_files():
             else:
                 sThreadID=''
 
-            fullMessage = f'{timestamp}:{logLevel.name}:[{where}]{jobName}{sThreadID}: {message}'
+            if calledFrom is None:
+                sCalledFrom=''
+            else:
+                sCalledFrom=f'<[{calledFrom}]'
+
+            fullMessage = f'{timestamp}:{logLevel.name}:[{where}]{jobName}{sThreadID}{sCalledFrom}: {message}'
+
             if shared.SCREEN_STATS:
                 fullScreenMessage=f'\n{fullMessage}'
             else:
@@ -382,7 +404,7 @@ def writeToLog_files():
                         try:
                             dumpFile = open( f'{sLogFilePrefix}.DUMP', 'w', encoding = 'utf-8')
                             dumper=csv.writer(dumpFile, delimiter = shared.dumpFileSeparator, quoting = csv.QUOTE_MINIMAL)
-                            dumper.writerow(dumpColNames)
+                            dumper.writerow(dumpColNames) #type: ignore
                             dumper.writerows(shared.encodeSpecialChars(message))
                             dumpFile.close()
                         except Exception:

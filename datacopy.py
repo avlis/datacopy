@@ -133,7 +133,7 @@ def Main():
 
     if shared.ErrorOccurred.value and shared.exitCode.value == 0 :
         with shared.exitCode.get_lock():
-            shared.exitCode.value == 32
+            shared.exitCode.value = 32
 
     logging.closeLog()
 

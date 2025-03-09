@@ -1,19 +1,33 @@
 #!/bin/bash
 source /etc/profile
 
-function userRequestedStop() {
+function getMainPid() {
     python_pid=$(ps -ef | grep "datacopy: main thread" | grep -v grep | awk '{print $2}')
+    echo -n ${python_pid}
+}
+
+function waitForMainPid() {
+    while true; do
+        [ -z "$(getMainPid)" ] && break
+        sleep 1
+    done
+}
+
+function userRequestedStop() {
+    python_pid=$(getMainPid)
     echo -e "\n\n*** launch.sh: control-c detected, sending it to python process id ${python_pid} ***\n\n"
     kill -s INT ${python_pid}
-    sleep 10
+    #sleep 10
+    waitForMainPid
     exit 15
 }
 
 function killSignalReceived() {
-    python_pid=$(ps -ef | grep "datacopy: main thread" | grep -v grep | awk '{print $2}')
+    python_pid=$(getMainPid)
     echo -e "\n\n*** launch.sh: kill detected, sending it to python process id ${python_pid} ***\n\n"
     kill -s TERM ${python_pid}
-    sleep 10
+    #sleep 10
+    waitForMainPid
     exit 15
 }
 
@@ -43,6 +57,11 @@ else
         useradd -M -g ${RUN_GID} -u ${RUN_UID} datacopy
         RUN_UNAME=datacopy
     fi
+fi
+
+if [ "${DEBUG}" != "yes" -a "${DEBUG_TO_LOG}" != "yes"  -a "${DEBUG_TO_STDERR}" != "yes" ]; then
+    echo "*** DEBUG is not active, cleaning up code for production ***" > /dev/stderr
+    sed -i 's/^(.*)logPrint\((.*)logLevel.DEBUG.*$/#DEBUG log line removed here/' /usr/local/bin/*.py /usr/local/bin/modules/*.sh
 fi
 
 #make sure proxy settings get everywhere

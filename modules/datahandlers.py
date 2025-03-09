@@ -13,8 +13,6 @@ import modules.shared as shared
 import modules.logging as logging
 from modules.logging import logLevel as logLevel
 
-
-
 def readData(p_jobID:int, p_connection, p_cursor, p_fetchSize:int, p_query:str):
     '''gets data from sources'''
 
@@ -43,8 +41,8 @@ def readData(p_jobID:int, p_connection, p_cursor, p_fetchSize:int, p_query:str):
     if shared.Working.value and not errorOccurred:
         #first read outside the loop, to get the col description without penalising the loop with ifs
         bData = False
+        rStart = timer()
         try:
-            rStart = timer()
             bData = p_cursor.fetchmany(p_fetchSize)
         except Exception as e:
             errorOccurred = True
@@ -80,7 +78,7 @@ def readData(p_jobID:int, p_connection, p_cursor, p_fetchSize:int, p_query:str):
         logging.logPrint('exited read loop.', logLevel.DEBUG, p_jobID=p_jobID)
     else:
         logging.logPrint('testing queries mode, stopping read.', logLevel.DEBUG, p_jobID=p_jobID)
-
+        pass #do not remove as on production we delete the previous line
 
     setproctitle.setproctitle(f'datacopy: readData (abort@cursor) [{jobName}]')
     try:
@@ -157,18 +155,18 @@ def readData2(p_jobID:int, p_connection, p_connection2, p_cursor, p_cursor2, p_f
         if not bData:
             break
 
-        new_bData = []
+        logging.logPrint(f'[{len(bData)}] rows retrieved from query 1', logLevel.DEBUG, p_jobID=p_jobID)
+        for keys in bData:
+            if shared.Working.value == False or errorOccurred:
+                break
 
-        for l in bData:
-
-            keys=list(l[:-1])
-            rowid=int(l[-1])
+            logging.logPrint(f'executing query 2 with keys=[{keys}]', logLevel.DEBUG, p_jobID=p_jobID)
 
             try:
                 p_cursor2.execute(p_query2, keys)
             except Exception as e:
                 errorOccurred = True
-                logging.processError(p_e=e, p_message=f'(execute2: query=[{p_query2}], keys=[{keys}], rowid=[{rowid}], conn=[{p_connection}], conn2=[{p_connection2}]', p_jobID=p_jobID, p_dontSendToStats=True)
+                logging.processError(p_e=e, p_message=f'(execute2: query=[{p_query2}], keys=[{keys}], conn=[{p_connection}], conn2=[{p_connection2}]', p_jobID=p_jobID)
                 shared.eventQueue.put( (shared.E_QUERY_ERROR, p_jobID, None, (timer() - tStart)) )
 
             while shared.Working.value and not errorOccurred:
@@ -185,22 +183,22 @@ def readData2(p_jobID:int, p_connection, p_connection2, p_cursor, p_cursor2, p_f
                     errorOccurred = True
                     logging.processError(p_e=e, p_message=f'reading', p_jobID=p_jobID, p_dontSendToStats=True)
                     shared.eventQueue.put( (shared.E_READ_ERROR, p_jobID, None, (timer() - tStart)) )
+
                     break
                 if not bData2:
+                    logging.logPrint(f'query 2 returned no rows', logLevel.DEBUG, p_jobID=p_jobID)
                     break
-
-                for li in bData2:
-                    nl=li+(rowid,)
-                    new_bData=new_bData+[(nl),]
+                logging.logPrint(f'query 2 returned [{len(bData2)}] rows', logLevel.DEBUG, p_jobID=p_jobID)
+                if len(bData2) > 0:
+                    shared.eventQueue.put( (shared.E_READ, p_jobID, len(bData2), (timer()-rStart)) )
+                    shared.dataQueue.put( bData2, block = True )
             else:
                 continue
-            break
 
-        if shared.TEST_QUERIES:
-            break
-        if len(new_bData) > 0:
-            shared.eventQueue.put( (shared.E_READ, p_jobID, len(new_bData), (timer()-rStart)) )
-            shared.dataQueue.put( new_bData, block = True )
+            if shared.TEST_QUERIES:
+                    break
+
+
 
     try:
         p_cursor.close()

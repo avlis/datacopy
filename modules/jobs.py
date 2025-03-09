@@ -148,10 +148,7 @@ def preCheck():
     #prebuild the jobName used in logs and stats
     shared.jobs['jobName'] = shared.jobs.apply(lambda row: f"{row['index']}-{row['source']}-{row['dest']}-{row['table']}", axis=1)
 
-    if shared.DEBUG:
-        buffer = StringIO()
-        print(shared.jobs, file=buffer, flush=True)
-        logging.logPrint(f'final jobs data:\n{buffer.getvalue()}\n', logLevel.DEBUG)
+    if shared.DEBUG: buffer = StringIO() ; print(shared.jobs, file=buffer, flush=True); logging.logPrint(f'final jobs data:\n{buffer.getvalue()}\n', logLevel.DEBUG)
 
 def readSqlFile(p_filename:str, p_parentFilename:str = '') -> str:
     '''Reads a SQL file, handling #include directives.'''
@@ -174,7 +171,7 @@ def readSqlFile(p_filename:str, p_parentFilename:str = '') -> str:
             logging.processError(p_message=f'error trying to read sql file [{p_filename}]: [{error}]')
         else:
             logging.processError(p_message=f'error trying to read sql file [{p_filename}] mentioned in [{p_parentFilename}]: [{error}]', p_stop=True, p_exitCode=4)
-        return
+        return ''
 
 
 def calcJob(p_jobID:int) -> tuple:
@@ -193,8 +190,8 @@ def calcJob(p_jobID:int) -> tuple:
                     else:
                         buffer = f'{driver_schema_cmd.format(schema)}; {existing_prequery}'
         except Exception as e:
-            logging.processError(p_e=e, p_message=f'{p_conn_name}::{existing_prequery}', p_logLevel=logLevel.DEBUG, p_stop=True, p_exitCode=4)
-            return
+            logging.processError(p_e=e, p_message=f'{p_conn_name}::{existing_prequery}', p_stop=True, p_exitCode=4)
+            return ''
 
         return buffer
 
@@ -249,14 +246,15 @@ def calcJob(p_jobID:int) -> tuple:
             else:
                 regexes = None
 
-        for regex in regexes:
-            r = regex.split('\t')
-            if len(r) >= 2:
-                logging.logPrint(f'replacing [{r[0]}] with [{r[1]}] on queries', p_jobID=p_jobID)
-                query = re.sub( r[0], r[1], query )
-                query2 = re.sub( r[0], r[1], query2 )
-                preQuerySrc = re.sub( r[0], r[1], preQuerySrc )
-                preQueryDst = re.sub( r[0], r[1], preQueryDst )
+        if regexes is not None:
+            for regex in regexes:
+                r = regex.split('\t')
+                if len(r) >= 2:
+                    logging.logPrint(f'replacing [{r[0]}] with [{r[1]}] on queries', p_jobID=p_jobID)
+                    query = re.sub( r[0], r[1], query )
+                    query2 = re.sub( r[0], r[1], query2 )
+                    preQuerySrc = re.sub( r[0], r[1], preQuerySrc )
+                    preQueryDst = re.sub( r[0], r[1], preQueryDst )
 
     table = shared.jobs['table'][p_jobID]
 

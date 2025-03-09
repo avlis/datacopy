@@ -268,7 +268,7 @@ def jobManager():
                         case shared.E_QUERY_ERROR:
                             iRunningQueries -= 1
                             logging.statsPrint('execQueryError', eJobID, 0, secs, iRunningQueries)
-                            #handle_error()
+                            logging.processError(p_message='QUERY ERROR event', p_dontSendToStats=True, p_jobID=eJobID, p_stop=True, p_exitCode=6)
 
                         case shared.E_QUERY_END:
                             iRunningQueries -= 1
@@ -360,29 +360,32 @@ def jobManager():
                                     logging.logPrint(f'number of writers for this job: [{nbrParallelWriters}]', p_jobID=eJobID)
 
                                     newWriteConns = connections.initConnections(dest, False, nbrParallelWriters, table, sWriteFileMode)
-                                    shared.stopWhenEmpty.value = False
-                                    for x in range(nbrParallelWriters):
-                                        shared.PutConn[iWriters] = newWriteConns[x]
-                                        if isinstance(newWriteConns[x], tuple):
-                                            shared.PutData[iWriters] = None
-                                            shared.writeP[iWriters] = (mp.Process(target=datahandlers.writeDataCSV, args = (eJobID, iWriters, shared.PutConn[iWriters], sCSVHeader, bCSVEncodeSpecial) ))
-                                            shared.writeP[iWriters].start()
-                                        else:
-                                            shared.PutData[iWriters] = shared.PutConn[iWriters].cursor()
-                                            if len(preQueryDst) > 0:
-                                                try:
-                                                    logging.logPrint(f'preparing cursor #{iWriters} for inserts, executing preQueryDst=[{preQueryDst}]', logLevel.DEBUG, p_jobID=eJobID)
-                                                    shared.PutData[iWriters].execute(preQueryDst)
-                                                except Exception as e:
-                                                    logging.processError(p_e=e, p_message=f'preparing cursor #{iWriters} for inserts, preQueryDst=[{preQueryDst}]', p_jobID=eJobID,p_dontSendToStats=True)
-                                            shared.writeP[iWriters] = (mp.Process(target=datahandlers.writeData, args = (eJobID, iWriters, shared.PutConn[iWriters], shared.PutData[iWriters], iQuery) ))
-                                            shared.writeP[iWriters].start()
-                                        iWriters += 1
-                                        iRunningWriters += 1
-                                        shared.runningWriters.value = iRunningWriters
+                                    if newWriteConns is None:
+                                        logging.processError(p_message='InitConnections returned None, giving up', p_stop=True)
+                                    else:
+                                        shared.stopWhenEmpty.value = False
+                                        for x in range(nbrParallelWriters):
+                                            shared.PutConn[iWriters] = newWriteConns[x]
+                                            if isinstance(newWriteConns[x], tuple):
+                                                shared.PutData[iWriters] = None
+                                                shared.writeP[iWriters] = (mp.Process(target=datahandlers.writeDataCSV, args = (eJobID, iWriters, shared.PutConn[iWriters], sCSVHeader, bCSVEncodeSpecial) ))
+                                                shared.writeP[iWriters].start()
+                                            else:
+                                                shared.PutData[iWriters] = shared.PutConn[iWriters].cursor()
+                                                if len(preQueryDst) > 0:
+                                                    try:
+                                                        logging.logPrint(f'preparing cursor #{iWriters} for inserts, executing preQueryDst=[{preQueryDst}]', logLevel.DEBUG, p_jobID=eJobID)
+                                                        shared.PutData[iWriters].execute(preQueryDst)
+                                                    except Exception as e:
+                                                        logging.processError(p_e=e, p_message=f'preparing cursor #{iWriters} for inserts, preQueryDst=[{preQueryDst}]', p_jobID=eJobID,p_dontSendToStats=True)
+                                                shared.writeP[iWriters] = (mp.Process(target=datahandlers.writeData, args = (eJobID, iWriters, shared.PutConn[iWriters], shared.PutData[iWriters], iQuery) ))
+                                                shared.writeP[iWriters].start()
+                                            iWriters += 1
+                                            iRunningWriters += 1
+                                            shared.runningWriters.value = iRunningWriters
 
-                                    writersNotStartedYet = False
-                                    logging.statsPrint('writeDataStart', eJobID, 0, 0, iRunningWriters)
+                                        writersNotStartedYet = False
+                                        logging.statsPrint('writeDataStart', eJobID, 0, 0, iRunningWriters)
 
                         case shared.E_READ_ERROR:
                             logging.statsPrint('readDataError', eJobID, iDataLinesRead[eJobID], iReadSecs[eJobID], iRunningReaders)
@@ -433,9 +436,19 @@ def jobManager():
                         iIdleTimeout += 1
                         shared.idleSecsObserved.value += 1
 
-                        if shared.idleTimetoutSecs > 0 and iIdleTimeout > shared.idleTimetoutSecs:
-                            logging.statsPrint('IdleTimeoutError', jobID, 0, shared.idleTimetoutSecs, 0)
-                            logging.processError(p_message=f'idle timeout secs [{shared.idleTimetoutSecs}] reached.', p_dontSendToStats=True, p_stop=True, p_exitCode=5)
+                        if shared.idleTimeoutSecs > 0 and iIdleTimeout > shared.idleTimeoutSecs:
+                            logging.statsPrint('IdleTimeoutError', jobID, 0, shared.idleTimeoutSecs, 0)
+                            logging.processError(p_message=f'idle timeout secs [{shared.idleTimeoutSecs}] reached.', p_dontSendToStats=True, p_stop=True, p_exitCode=5)
+
+                            #try to close all cursors and connections to force the drivers to give up
+                            allObjectsToClose={**shared.GetData, **shared.GetData2, **shared.PutData, **shared.GetConn, **shared.GetConn2, **shared.PutConn}
+                            for k,v in allObjectsToClose.items():
+                                try:
+                                    v[k].close()
+                                    v[k] = None
+                                except Exception as e:
+                                    logging.logPrint(f'ignored error on forcing close on timeout, [{k}][{v[k]}]: [{e}]', logLevel.DEBUG)
+                                    pass #do not remove as on production we delete the previous line
 
                         if ( iIdleTimeout > 3 and iRunningWriters == 0 and iRunningReaders == 0 ):
                             #exit inner loop
