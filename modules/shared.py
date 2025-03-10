@@ -6,19 +6,19 @@ import os
 import sys
 import psutil
 
-import signal
 import inspect
 
 import multiprocessing as mp
-from datetime import datetime
+from multiprocessing.sharedctypes import Synchronized
 
+from datetime import datetime
 from time import time
 
-from typing import Callable
-import pandas as pd
+from typing import Callable, Any
 
 
 #### Event fast "enum" ############################################################################
+# (not real Enum because it is a lot slower)
 
 E_NOOP = 0
 E_QUERY = 1
@@ -63,6 +63,13 @@ def timestamp_readable() -> str:
 def timestamp_unix() -> float:
     return time()
 
+# Job Name Calculator, used in multiple places
+
+def getJobName(p_jobID:int) -> str:
+    try:
+        return jobs[p_jobID]['jobName']
+    except:
+        return 'global'
 
 #### shared Constants #############################################################################
 
@@ -92,7 +99,7 @@ dumpFileSeparator:str = os.getenv('DUMPFILE_SEP','|')
 
 executionID:str = os.getenv('EXECUTION_ID',datetime.now().strftime('%Y%m%d%H%M%S.%f'))
 
-logTimestampFormat = os.getenv('LOG_TIMESTAMP_FORMAT','date')
+logTimestampFormat:str = os.getenv('LOG_TIMESTAMP_FORMAT','date')
 logTimestampFunction:Callable[[], str | float] = None #type: ignore
 
 match logTimestampFormat:
@@ -103,7 +110,7 @@ match logTimestampFormat:
     case _:
         logTimestampFunction=timestamp_readable
 
-statsTimestampFormat = os.getenv('STATS_TIMESTAMP_FORMAT','date')
+statsTimestampFormat:str = os.getenv('STATS_TIMESTAMP_FORMAT','date')
 statsTimestampFunction:Callable[[], str | float] = None #type: ignore
 
 match statsTimestampFormat:
@@ -114,7 +121,7 @@ match statsTimestampFormat:
     case _:
         statsTimestampFunction=timestamp_readable
 
-memoryTimestampFormat = os.getenv('MEMORY_STATS_TIMESTAMP_FORMAT','date')
+memoryTimestampFormat:str = os.getenv('MEMORY_STATS_TIMESTAMP_FORMAT','date')
 memoryTimestampFunction:Callable[[], str | float] = None # type: ignore
 
 match memoryTimestampFormat:
@@ -155,25 +162,25 @@ if MEMORY_STATS_IN_JSON:
 else:
     memoryStatsFormat:str = '{0}\t{1}\t{2:.2f}\t{3}\t{4}\t{5}'
 
-collectMemoryMainProcessID = psutil.Process(os.getpid())
+collectMemoryMainProcessID:psutil.Process = psutil.Process(os.getpid())
 
 defaultFetchSize:int = 1024
 
 
 #### Shared Variables, but changed in single thread contexts ######################################
 
-connections:pd.DataFrame = None # type: ignore
-jobs:pd.DataFrame = None #type: ignore
+connections:dict[str, dict[str, Any]] = {}
+jobs:dict[int, dict[str, Any]] = {}
 
-PutConn = {}
-PutData = {}
-GetConn = {}
-GetConn2 = {}
-GetData = {}
-GetData2 = {}
+PutConn:dict[int, Any] = {}
+PutData:dict[int, Any] = {}
+GetConn:dict[int, Any] = {}
+GetConn2:dict[int, Any] = {}
+GetData:dict[int, Any] = {}
+GetData2:dict[int, Any] = {}
 
-readP = {}
-writeP = {}
+readP:dict[int, Any] = {}
+writeP:dict[int, Any] = {}
 
 logName:str = ''
 
@@ -197,110 +204,13 @@ eventQueue:mp.Queue = mp.Queue()
 logQueue:mp.Queue = mp.Queue()
 '''message format: tuple(logLevel:Enum, message, jobID:int, jobName:str, where:str)'''
 
-Working = mp.Value('b', True)
-runningReaders = mp.Value('i', 0)
-runningWriters = mp.Value('i', 0)
-ErrorOccurred =  mp.Value('b',False)
-stopWhenEmpty = mp.Value('b', False)
-logIsAlreadyClosed = mp.Value('b', False)
+Working:Synchronized[bool] = mp.Value('b', True)
+runningReaders:Synchronized[int] = mp.Value('i', 0)
+runningWriters:Synchronized[int] = mp.Value('i', 0)
+ErrorOccurred:Synchronized[bool] =  mp.Value('b',False)
+stopWhenEmpty:Synchronized[bool] = mp.Value('b', False)
+logIsAlreadyClosed:Synchronized[bool] = mp.Value('b', False)
 
-idleSecsObserved = mp.Value('i', 0)
+idleSecsObserved:Synchronized[int] = mp.Value('i', 0)
 
-exitCode = mp.Value('i', 0)
-
-#### Other Utilities ##############################################################################
-
-def encodeSpecialChars(p_in):
-    '''convert special chars to escaped representation'''
-    buff=[]
-    for line in p_in:
-        newLine=[]
-        for col in line:
-            if isinstance(col, str):
-                newData=[]
-                for b in col:
-                    i=ord(b)
-                    if i<32:
-                        newData.append(r'\{hex(i)}')
-                    else:
-                        newData.append(b)
-                newLine.append(''.join(newData))
-            else:
-                newLine.append(col)
-        buff.append(tuple(newLine))
-    return tuple(buff)
-
-def identify_type(obj):
-    '''Identifies the type of an object as integer, float, date, or string.
-
-    Args:
-        obj: The object to identify the type of.
-
-    Returns:
-        A string indicating the type of the object.
-    '''
-    t = type(obj)
-    if t == int:
-        return 'integer'
-    elif t == float:
-        return 'float'
-    elif str(t).startswith("<class 'datetime."):  # Replace with your date library if needed
-        return 'date'
-    elif t == str:
-        return 'string'
-    else:
-        return 'unknown'
-
-def delimiter_decoder(delimiter_name:str) -> str:
-    delim_decoder = {
-    'tab': '\t',
-    'space': ' ',
-    'comma': ',',
-    'colon': ':',
-    'semicolon': ';',
-    'newline': '\n',
-    'pipe': '|',
-    'slash': '/',
-    'backslash': '\\',
-    'dollar': '$',
-    'at': '@',
-    'percent': '%',
-    'hash': '#',
-    'ampersand': '&',
-    'equals': '=',
-    'plus': '+',
-    'minus': '-',
-    'asterisk': '*',
-    'lparen': '(',
-    'rparen': ')',
-    'lbracket': '[',
-    'rbracket': ']',
-    'lbrace': '{',
-    'rbrace': '}',
-    'lt': '<',
-    'gt': '>',
-    'tilde': '~',
-    'exclamation': '!',
-    'question': '?',
-    'dot': '.',
-    'underscore': '_',
-    'hiphen': '-',
-    'backtick': '`',
-    'doublequote': '"',
-    'singlequote': "'",
-    }
-
-    try:
-        return delim_decoder[delimiter_name]
-    except:
-        return delimiter_name
-
-def block_signals():
-    '''we want to make sure these threads exit gracefully, only when shared.Working.value is False'''
-    signal.pthread_sigmask(signal.SIG_BLOCK, [signal.SIGINT])
-    signal.pthread_sigmask(signal.SIG_BLOCK, [signal.SIGTERM])
-
-    #the previous lines don't seem to fix everything, also trying to ignore the signals
-    signal.SIG_IGN
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
-    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+exitCode:Synchronized[int] = mp.Value('i', 0)

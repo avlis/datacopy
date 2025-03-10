@@ -10,18 +10,19 @@ import queue
 import setproctitle
 
 import modules.shared as shared
+import modules.utils as utils
 import modules.logging as logging
 from modules.logging import logLevel as logLevel
 
 def readData(p_jobID:int, p_connection, p_cursor, p_fetchSize:int, p_query:str):
     '''gets data from sources'''
 
-    shared.block_signals()
+    utils.block_signals()
 
     logging.logPrint(f'Started, with cursor=[{id(p_cursor)}]', logLevel.DEBUG, p_jobID=p_jobID)
     tStart = timer()
 
-    jobName = logging.getJobName(p_jobID)
+    jobName = shared.getJobName(p_jobID)
 
     errorOccurred = False
 
@@ -117,11 +118,11 @@ def readData(p_jobID:int, p_connection, p_cursor, p_fetchSize:int, p_query:str):
 def readData2(p_jobID:int, p_connection, p_connection2, p_cursor, p_cursor2, p_fetchSize:int, p_query:str, p_query2:str):
     '''gets data from sources, sublooping for keys'''
 
-    shared.block_signals()
+    utils.block_signals()
 
     logging.logPrint(f'Started, with cursor2=[{id(p_cursor2)}]', logLevel.DEBUG, p_jobID=p_jobID)
 
-    jobName = logging.getJobName(p_jobID)
+    jobName = shared.getJobName(p_jobID)
 
     tStart = timer()
     bColsNotSentYet = True
@@ -224,9 +225,9 @@ def readData2(p_jobID:int, p_connection, p_connection2, p_cursor, p_cursor2, p_f
 def writeData(p_jobID:int, p_threadID:int, p_connection, p_cursor, p_iQuery:str = ''):
     '''writes data to destinations'''
 
-    shared.block_signals()
+    utils.block_signals()
 
-    jobName = logging.getJobName(p_jobID)
+    jobName = shared.getJobName(p_jobID)
 
     setproctitle.setproctitle(f'datacopy: writeData [{jobName}]')
 
@@ -289,9 +290,9 @@ def writeData(p_jobID:int, p_threadID:int, p_connection, p_cursor, p_iQuery:str 
 def writeDataCSV(p_jobID:int, p_threadID:int, p_conn, p_Header:str, p_encodeSpecial:bool = False):
     '''write data to csv file'''
 
-    shared.block_signals()
+    utils.block_signals()
 
-    jobName = logging.getJobName(p_jobID)
+    jobName = shared.getJobName(p_jobID)
 
     #p_conn is returned by initConnections as (file, stream) for CSVs
     f_file, f_stream = p_conn
@@ -314,7 +315,7 @@ def writeDataCSV(p_jobID:int, p_threadID:int, p_conn, p_Header:str, p_encodeSpec
         iStart = timer()
         try:
             if p_encodeSpecial:
-                f_stream.writerows(shared.encodeSpecialChars(bData))
+                f_stream.writerows(utils.encodeSpecialChars(bData))
             else:
                 f_stream.writerows(bData)
         except Exception as e:

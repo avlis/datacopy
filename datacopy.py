@@ -49,8 +49,7 @@ def sig_handler(signum, frame):
     '''handles signals'''
 
     p = mp.current_process()
-    if shared.DEBUG:
-        print(f'process [{p.name}] received signal [{signum}]', file=sys.stderr, flush=True)
+    print(f'process [{p.name}] received signal [{signum}]', file=sys.stderr, flush=True) #DISABLE_IN_PROD
     if p.name == 'MainProcess':
         logging.statsPrint('stopRequested', None, 0, 0, 0)
         logging.processError(p_message=f'sigHander: Error: stop signal received ({signum})', p_dontSendToStats=True, p_stop=True, p_exitCode=15)
@@ -59,8 +58,7 @@ def sig_handler(signum, frame):
 def Main():
     '''entry point'''
 
-    if shared.DEBUG:
-        print ('start of Main()', file=sys.stderr, flush=True)
+    print ('start of Main()', file=sys.stderr, flush=True) #DISABLE_IN_PROD
 
     signal.signal(signal.SIGINT, sig_handler)
     signal.signal(signal.SIGTERM, sig_handler)
@@ -87,8 +85,7 @@ def Main():
 
     logging.logPrint(f"datacopy version [{os.getenv('BASE_VERSION','<unkown>')}][{os.getenv('VERSION','<unkown>')}] starting")
     logging.logPrint(f'executionID: [{shared.executionID}]')
-    if shared.DEBUG:
-        logging.logPrint('copyData()', logLevel.DUMP_SHARED)
+    logging.logPrint('copyData()', logLevel.DUMP_SHARED) #DISABLE_IN_PROD
 
     if shared.Working.value:
         connections.loadConnections(c_filename)
@@ -137,8 +134,7 @@ def Main():
 
     logging.closeLog()
 
-    if shared.DEBUG:
-        print('closeLog: making sure log thread is terminated...', file=sys.stderr, flush=True)
+    print('closeLog: making sure log thread is terminated...', file=sys.stderr, flush=True) #DISABLE_IN_PTOD
     try:
         logging.logThread.join(timeout=1)
         logging.logThread.terminate()

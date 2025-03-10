@@ -60,8 +60,8 @@ else
 fi
 
 if [ "${DEBUG}" != "yes" -a "${DEBUG_TO_LOG}" != "yes"  -a "${DEBUG_TO_STDERR}" != "yes" ]; then
-    echo "*** DEBUG is not active, cleaning up code for production ***" > /dev/stderr
-    sed -i 's/^(.*)logPrint\((.*)logLevel.DEBUG.*$/#DEBUG log line removed here/' /usr/local/bin/*.py /usr/local/bin/modules/*.sh
+    echo "*** DEBUG is not active, cleaning up code for production ***"
+    sed -i -E 's/^(.*)logPrint\((.*)logLevel.DEBUG.*$|^.*#DISABLE_IN_PROD.*$/#DISABLED code removed here/' /usr/local/bin/*.py /usr/local/bin/modules/*.py
 fi
 
 #make sure proxy settings get everywhere

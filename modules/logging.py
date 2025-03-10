@@ -16,6 +16,7 @@ from enum import Enum
 from typing import Optional
 
 import modules.shared as shared
+import modules.utils as utils
 
 #### Constants ##########################################################################
 
@@ -75,7 +76,7 @@ def logPrint(p_message, p_logLevel:logLevel=logLevel.INFO, *, p_jobID:Optional[i
             if p_jobID is None:
                 jobName=None
             else:
-                jobName=f'[{getJobName(p_jobID)}]'
+                jobName=f'[{shared.getJobName(p_jobID)}]'
 
     if message is not None:
         shared.logQueue.put( ( p_logLevel, message, p_jobID, p_threadID, jobName, where, calledFrom ), block=True, timeout=shared.idleTimeoutSecs)
@@ -85,7 +86,7 @@ def statsPrint(p_type:str, p_jobID:Optional[int], p_recs:int, p_secs:float, p_th
 
     jobName:str = 'global'
     if p_jobID is not None:
-        jobName = getJobName(p_jobID)
+        jobName = shared.getJobName(p_jobID)
 
     sMsg = shared.statsFormat.format(shared.statsTimestampFunction(), shared.executionID, p_type, jobName, p_recs, p_secs, p_threads )
     shared.logQueue.put( ( logLevel.STATS, sMsg, None, None, None, None, None ) )
@@ -135,38 +136,38 @@ def closeLog():
     '''makes sure the log file is properly handled.'''
 
     def print_message(message:str):
-        if shared.DEBUG: print(message, file=sys.stderr, flush=True)
+        print(message, file=sys.stderr, flush=True)
 
     def process_remaining_logs(loopTimeout:int, stage:int):
         title=f'closeLog: waiting for empty log queue (stage {stage}):'
         while shared.logQueue.qsize() > 0:
-            print_message(f'{title} logs to process=[{shared.logQueue.qsize()}]')
+            print_message(f'{title} logs to process=[{shared.logQueue.qsize()}]') #DISABLE_IN_PROD
             sleep(1)
             loopTimeout -= 1
             if  loopTimeout == 0:
-                print_message(f'{title} timing out.')
+                print_message(f'{title} timing out.') #DISABLE_IN_PROD
                 break
         while shared.logQueue.qsize() > 0:
             dLogLevel, dMessage, dJobID, djobName, dWhere = shared.logQueue.get()
-            print_message(f'{title} discarted LOG: [{dLogLevel.name}][{dMessage}][{dJobID}][{djobName}][{dWhere}]')
-        print_message(f'{title} exiting.')
+            print_message(f'{title} discarted LOG: [{dLogLevel.name}][{dMessage}][{dJobID}][{djobName}][{dWhere}]') #DISABLE_IN_PROD
+        print_message(f'{title} exiting.') #DISABLE_IN_PROD
 
     def process_remaining_events(loopTimeout:int):
         title='closeLog: waiting for empty event queue:'
         while shared.eventQueue.qsize() > 0 and loopTimeout > 0:
-            print_message(f'{title} events to process=[{shared.eventQueue.qsize()}]')
+            print_message(f'{title} events to process=[{shared.eventQueue.qsize()}]') #DISABLE_IN_PROD
             sleep(1)
             loopTimeout -= 1
         while shared.eventQueue.qsize() > 0:
             dType, dJobId, dRecs, dSecs = shared.eventQueue.get()
-            print_message(f'{title} discarted EVENT: [{shared.eventsDecoder[dType]}][{dJobId}][{dRecs}][{dSecs}]')
+            print_message(f'{title} discarted EVENT: [{shared.eventsDecoder[dType]}][{dJobId}][{dRecs}][{dSecs}]') #DISABLE_IN_PROD
 
     try:
-        print_message('\ncloseLog: called')
+        print_message('\ncloseLog: called') #DISABLE_IN_PROD
 
         with shared.logIsAlreadyClosed.get_lock():
             if shared.logIsAlreadyClosed.value:
-                print_message('\ncloseLog: was already closed.')
+                print_message('\ncloseLog: was already closed.') #DISABLE_IN_PROD
                 return
             shared.logIsAlreadyClosed.value = True
 
@@ -174,25 +175,19 @@ def closeLog():
 
         process_remaining_logs(3, 1)
 
-        print_message(f'\ncloseLog: sending CLOSE to write log thread')
+        print_message(f'\ncloseLog: sending CLOSE to write log thread') #DISABLE_IN_PROD
         shared.logQueue.put( (logLevel.CLOSE, None, None, None, None, None, None) )
 
         process_remaining_logs(3, 2)
 
-        print_message('closeLog: sending END to write log thread')
+        print_message('closeLog: sending END to write log thread') #DISABLE_IN_PROD
         shared.logQueue.put( (logLevel.END, None, None, None, None, None, None) )
 
         process_remaining_logs(3, 3)
 
     except Exception as e:
-        print_message(f'closeLog: unexpected error ({sys.exc_info()[2].tb_lineno}): [{e}]')
-
-def getJobName(p_jobID:int) -> str:
-    try:
-        return shared.jobs['jobName'][p_jobID]
-    except:
-        logPrint(f'getJobName call could not find jobName for key [{p_jobID}]', logLevel.DEBUG, nested=True)
-        return 'global'
+        print_message(f'closeLog: unexpected error ({sys.exc_info()[2].tb_lineno}): [{e}]') #DISABLE_IN_PROD
+        pass #do not remove, because previous line is disabled in PROD mode
 
 #### "Private" stuff #####################################################################
 
@@ -223,7 +218,6 @@ def whoAmI(stackLevel:int=2) -> str:
         return f'{modName}{className}.{funcName}({lineNumber})'
     else:
         return f'{modName}{className}.{funcName}'
-
 
 def monitor_memory():
     '''
@@ -307,14 +301,13 @@ def term_json_file(p_file, date_function=shared.timestamp_readable) -> None:
     else:
         print(f'{{"stop":{date_function()}}}]', file=p_file, flush=True)
 
-
 def writeToLog_files():
     '''
         processes messages on the log queue and sends them to files, stdout, stderr acordingly
         runs on its own thread, does not run on the main PID!
     '''
 
-    shared.block_signals()
+    utils.block_signals()
 
     setproctitle.setproctitle('datacopy: log file writer')
 
@@ -405,7 +398,7 @@ def writeToLog_files():
                             dumpFile = open( f'{sLogFilePrefix}.DUMP', 'w', encoding = 'utf-8')
                             dumper=csv.writer(dumpFile, delimiter = shared.dumpFileSeparator, quoting = csv.QUOTE_MINIMAL)
                             dumper.writerow(dumpColNames) #type: ignore
-                            dumper.writerows(shared.encodeSpecialChars(message))
+                            dumper.writerows(utils.encodeSpecialChars(message))
                             dumpFile.close()
                         except Exception:
                             pass

@@ -4,17 +4,20 @@
 
 import os
 import csv
-import pandas as pd
+
 import json
+
+from typing import Any
 
 import modules.logging as logging
 from modules.logging import logLevel as logLevel
 import modules.shared as shared
+import modules.utils as utils
 
 expected_conns_columns_db = ('name','driver','server','database','user','password')
 expected_conns_columns_csv = ('name','driver','paths','delimiter','quoting')
 
-check_bd_version_cmd = {
+check_bd_version_cmd:dict[str, str] = {
     'psycopg2':     'SELECT version()',
     'mysql':        'SELECT version()',
     'mariadb':      'SELECT version()',
@@ -26,7 +29,7 @@ check_bd_version_cmd = {
 }
 
 #to use with .format()
-change_schema_cmd = {
+change_schema_cmd:dict[str, str] = {
     'psycopg2':     'SET search_path TO {0};',
     'mysql':        'USE {0}',
     'mariadb':      'USE {0}',
@@ -68,62 +71,68 @@ def loadConnections(p_filename:str):
     load connections file into memory
     '''
 
-    conns = {}
+    conns:dict[str, Any] = {}
     try:
-        c=pd.read_csv(p_filename, delimiter = '\t').fillna('')
+        c=utils.read_csv_config(p_filename, emptyValuesDefault='', sequencialLineNumbers=True)
     except Exception as e:
         logging.processError(p_e=e, p_message=f'Loading [{p_filename}]', p_stop=True, p_exitCode=1)
         return
 
-    for i in range(len(c)):
-        cName = c['name'][i]
-        if cName=='' or cName[0] == '#':
-            continue
-        if c['driver'][i] == 'csv':
+    logging.logPrint(f'raw loaded connections file:\n{json.dumps(c, indent=2)}\n', logLevel.DEBUG)
+
+    for key in c.keys():
+        aConn:dict[str, Any] = c[key]
+        cName = aConn['name']
+
+        if cName in conns:
+            logging.processError(p_message=f'[{cName}]: Duplicate connection name in line [{key}]', p_stop=True, p_exitCode=1)
+            return
+
+        if aConn['driver'] == 'csv':
             for ecol in expected_conns_columns_csv:
-                if ecol not in c:
-                    logging.processError(p_message=f'[{cName}]: Missing column on connections file: [{ecol}]', p_stop=True, p_exitCode=1)
+                if ecol not in aConn:
+                    logging.processError(p_message=f'[{cName}]: Missing value on connections file: [{ecol}]', p_stop=True, p_exitCode=1)
                     return
             nc = {
-                'driver':       c['driver'][i],
-                'paths':        c['paths'][i],
-                'delimiter':    c['delimiter'][i],
-                'quoting':      c['quoting'][i],
+                'driver':       aConn['driver'],
+                'paths':        aConn['paths'],
+                'delimiter':    aConn['delimiter'],
+                'quoting':      aConn['quoting'],
                 }
         else:
             for ecol in expected_conns_columns_db:
-                if ecol not in c:
-                    logging.processError(p_message=f'[{cName}]: Missing column on connections file: [{ecol}]', p_stop=True, p_exitCode=1)
+                if ecol not in aConn:
+                    logging.processError(p_message=f'[{cName}]: Missing value on connections file: [{ecol}]', p_stop=True, p_exitCode=1)
                     return
-            if 'trustservercertificate' in c:
-                sTSC = c['trustservercertificate'][i]
+            if 'trustservercertificate' in aConn:
+                sTSC = aConn['trustservercertificate']
             else:
                 sTSC = 'no'
             sIP=''
-            if 'override_insert_placeholder' in c:
-                sIP = c['override_insert_placeholder'][i]
+            if 'override_insert_placeholder' in aConn:
+                sIP = aConn['override_insert_placeholder']
             else:
                 sIP = '%s'
 
             if os.getenv('ADD_NAMES_DELIMITERS','no') == 'yes':
-                sOD = insert_objects_delimiter[c['driver'][i]]
+                sOD = insert_objects_delimiter[aConn['driver']]
             else:
-                if 'insert_objects_delimiter' in c:
-                    sOD = shared.delimiter_decoder(c['insert_objects_delimiter'][i])
+                if 'insert_objects_delimiter' in aConn:
+                    sOD = utils.delimiter_decoder(aConn['insert_objects_delimiter'])
                 else:
                     sOD = ''
 
-            if 'schema' in c:
-                sSchema = c['schema'][i]
+            if 'schema' in aConn:
+                sSchema = aConn['schema']
             else:
                 sSchema = ''
 
             nc = {
-                'driver':                   c['driver'][i],
-                'server':                   c['server'][i],
-                'database':                 c['database'][i],
-                'user':                     c['user'][i],
-                'password':                 c['password'][i],
+                'driver':                   aConn['driver'],
+                'server':                   aConn['server'],
+                'database':                 aConn['database'],
+                'user':                     aConn['user'],
+                'password':                 aConn['password'],
                 'trustservercertificate':   sTSC,
                 'insert_placeholder':       sIP,
                 'insert_object_delimiter':  sOD,
@@ -133,14 +142,14 @@ def loadConnections(p_filename:str):
         conns[cName] = nc
 
     shared.connections = conns
-    if shared.DEBUG: buffer=json.dumps(conns, indent=2) ; logging.logPrint(f'final connections data:\n{buffer}\n', logLevel.DEBUG)
+    logging.logPrint(f'final connections data:\n{json.dumps(conns, indent=2)}\n', logLevel.DEBUG)
 
-def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_mode = 'w'):
+def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_mode = 'w') -> dict[int, Any]:
     ''' creates connection objects to sources or destinations
         returns an array of connections, if connecting to databases, or an array of tupples of (file, stream), if driver == csv
     '''
 
-    nc = {}
+    nc:dict[int, Any] = {}
 
     c = shared.connections[p_name]
 
@@ -159,9 +168,10 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                         nc[x].timeout = shared.idleTimeoutSecs
                     except Exception as e:
                         logging.logPrint(f'({p_name}): exception [{e}] happened while trying to set timeout to [{shared.idleTimeoutSecs}]', logLevel.DEBUG, reportFrom=True)
-            except (Exception, pyodbc.DatabaseError) as e:
+                        pass #do not remove as on production we delete the previous line
+            except (Exception, pyodbc.DatabaseError) as e: # type:ignore
                 logging.processError(p_e=e, p_message=p_name, p_stop=True, p_exitCode=2)
-                return
+                return {}
 
         case 'cx_Oracle':
             try:
@@ -188,7 +198,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
 
             except Exception as e:
                 logging.processError(p_e=e, p_message=p_name, p_stop=True, p_exitCode=2)
-                return
+                return {}
 
         case 'psycopg2':
             try:
@@ -208,7 +218,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                     nc[x].readonly = p_readOnly
             except Exception as e:
                 logging.processError(p_e=e, p_message=p_name, p_stop=True, p_exitCode=2)
-                return
+                return {}
 
         case 'mysql':
             try:
@@ -229,7 +239,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                         pass #do not remove as on production we delete the previous line
             except Exception as e:
                 logging.processError(p_e=e, p_message=p_name, p_stop=True, p_exitCode=2)
-                return
+                return {}
 
         case 'mariadb':
             try:
@@ -249,7 +259,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                         pass #do not remove as on production we delete the previous line
             except Exception as e:
                 logging.processError(p_e=e, p_message=p_name, p_stop=True, p_exitCode=2)
-                return
+                return {}
 
         case 'databricks':
             #https://docs.databricks.com/en/dev-tools/python-sql-connector.html#auth-m2m
@@ -282,7 +292,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
 
                 except Exception as e:
                     logging.processError(p_e=e, p_message=f'({p_name}): databricks auth, trying to retrieve Token', p_stop=True, p_exitCode=2)
-                    return
+                    return {}
 
                 logging.logPrint(f'({p_name}): databricks auth: got Token: [{token}]', logLevel.DEBUG, reportFrom=True)
 
@@ -300,7 +310,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                     logging.logPrint(f'({p_name}): databricks[{x}]: connected.', logLevel.DEBUG, reportFrom=True)
             except Exception as e:
                 logging.processError(p_e=e, p_message=p_name, p_stop=True, p_exitCode=2)
-                return
+                return {}
 
         case 'csv':
             if 'paths' in c:
@@ -314,12 +324,12 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                         os.makedirs(name=_path)
                     except Exception as e:
                         logging.processError(p_message=f'({p_name}): directory does not exist, and exception happened when trying to create it [{_path}]', p_stop=True, p_exitCode=2)
-                        return None
+                        return {}
 
             sFileName = ''
             logging.logPrint(f'({p_name}): dumping CSV files to {_paths}', logLevel.DEBUG, reportFrom=True)
             try:
-                _delim = shared.delimiter_decoder(c['delimiter'])
+                _delim = utils.delimiter_decoder(c['delimiter'])
                 logging.logPrint(f'({p_name}): csv delimiter set to [{_delim}]', logLevel.DEBUG, reportFrom=True)
             except Exception:
                 if len(c['delimiter']) == 1:
@@ -358,7 +368,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
     try:
         sGetVersion = check_bd_version_cmd[c['driver']]
         if len(sGetVersion) > 0:
-            cur = nc[0].cursor()
+            cur = nc[0].cursor() # type: ignore
             logging.logPrint(f'({p_name}): testing connection, getting version with [{sGetVersion}]...', logLevel.DEBUG, reportFrom=True)
             cur.execute(sGetVersion)
             db_version = cur.fetchone()
@@ -367,7 +377,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
             cur.close()
     except Exception as e:
         logging.processError(p_e=e, p_message=p_name, p_stop=True, p_exitCode=2)
-        return
+        return {}
 
     return nc
 
