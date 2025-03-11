@@ -100,13 +100,6 @@ def jobManager():
                         case 'T' | 'D':
                             cConn = connections.initConnections(thisJob.dest, False, 1, thisJob.table, 'w')[0]
                             cCleanData = cConn.cursor()
-                            if len(thisJob.preQueryDst) > 0:
-                                try:
-                                    logging.logPrint(f'preparing cursor to clean destination, executing preQueryDst=[{thisJob.preQueryDst}]', logLevel.DEBUG, p_jobID=jobID)
-                                    cCleanData.execute(thisJob.preQueryDst)
-                                except Exception as e:
-                                    logging.processError(p_e=e, p_message=f'preparing cursor to clean destination, preQueryDst=[{thisJob.preQueryDst}]', p_jobID=jobID, p_dontSendToStats=True)
-
                             match thisJob.mode.upper():
                                 case 'T':
                                     logging.logPrint(f'cleaning up table (truncate) [{thisJob.dest}].[{thisJob.table}]', p_jobID=jobID)
@@ -231,7 +224,7 @@ def jobManager():
                                     thisJob.query = f'SELECT * FROM {siObjSep}{thisJob.query}{siObjSep}'
 
                             shared.GetConn[eJobID] = connections.initConnections(thisJob.source, True, 1)[0]
-                            shared.GetData[eJobID] = connections.initCursor(shared.GetConn[eJobID], eJobID, thisJob.source, thisJob.fetchSize)
+                            shared.GetData[eJobID] = connections.initCursor(p_conn=shared.GetConn[eJobID], p_jobID=eJobID, p_source=thisJob.source, p_sourceDriver=thisJob.sourceDriver, p_fetchSize=thisJob.fetchSize)
                             if len(thisJob.preQuerySrc) > 0:
                                 logging.logPrint(f'({thisJob.source}): preparing source for selects, sending preQuerySrc=[{thisJob.preQuerySrc}]', logLevel.DEBUG, p_jobID=eJobID)
                                 try:
@@ -240,7 +233,7 @@ def jobManager():
                                     logging.processError(p_e=e, p_message=f'({thisJob.source}): preparing source for selects, sending preQuerySrc=[{thisJob.preQuerySrc}]', p_jobID=eJobID, p_dontSendToStats=True)
                             if len(thisJob.source2) > 0:
                                 shared.GetConn2[eJobID] = connections.initConnections(thisJob.source2, True, 1)[0]
-                                shared.GetData2[eJobID] = connections.initCursor(shared.GetConn2[eJobID], eJobID, thisJob.source2, thisJob.fetchSize)
+                                shared.GetData2[eJobID] = connections.initCursor(p_conn=shared.GetConn2[eJobID], p_jobID=eJobID, p_source=thisJob.source2, p_sourceDriver=thisJob.source2Driver, p_fetchSize=thisJob.fetchSize)
                             logging.logPrint(f'starting reading from [{thisJob.source}] to [{thisJob.dest}].[{thisJob.table}], with query:\n***\n{thisJob.query}\n***', p_jobID=eJobID)
                             if len(thisJob.query2) > 0:
                                 logging.logPrint(f'and from [{thisJob.source2}] with query:\n***\n{thisJob.query2}\n***', p_jobID=eJobID)
@@ -286,22 +279,16 @@ def jobManager():
                                         # from destination:
                                         cConn = connections.initConnections(thisJob.dest, False, 1, thisJob.table, 'r')[0]
                                         tdCursor = cConn.cursor()
-                                        if len(thisJob.preQueryDst) > 0:
-                                            try:
-                                                logging.logPrint(f'retrieving cols for @d, executing preQueryDst=[{thisJob.preQueryDst}]', logLevel.DEBUG, p_jobID=eJobID)
-                                                tdCursor.execute(thisJob.preQueryDst)
-                                            except Exception as e:
-                                                logging.processError(p_e=e, p_message=f'retrieving cols for @d, preQueryDst=[{thisJob.preQueryDst}]', p_jobID=eJobID,p_dontSendToStats=True)
                                         siObjSep = connections.getConnectionParameter(thisJob.dest, 'insert_object_delimiter')
                                         fetchColsFromDestSql=f'SELECT * FROM {siObjSep}{thisJob.table}{siObjSep}  WHERE 1=0'
-                                        logging.logPrint(f'retrieving cols for @d, executing preQueryDst=[{fetchColsFromDestSql}]', logLevel.DEBUG, p_jobID=eJobID)
+                                        logging.logPrint(f'retrieving cols for @d, executing [{fetchColsFromDestSql}]', logLevel.DEBUG, p_jobID=eJobID)
                                         tdCursor.execute(fetchColsFromDestSql)
                                         workingCols = tdCursor.description
                                         cConn.rollback() #somehow, this select blocks truncates on postgres, if not rolled back?...
                                         tdCursor.close()
                                     case _:
                                         workingCols = []
-                                        for col in sOverrideCols.split(','):
+                                        for col in thisJob.overrideCols.split(','):
                                             workingCols.append( (col,'dummy') )
 
                                 sIP = connections.getConnectionParameter(thisJob.dest, 'insert_placeholder')
@@ -438,7 +425,7 @@ def jobManager():
                                     v[k] = None
                                 except Exception as e:
                                     logging.logPrint(f'ignored error on forcing close on timeout, [{k}][{v[k]}]: [{e}]', logLevel.DEBUG)
-                                    pass #do not remove as on production we delete the previous line
+                                    pass #do not remove as on production mode we comment the previous line
 
                         if ( iIdleTimeout > 3 and iRunningWriters == 0 and iRunningReaders == 0 ):
                             #exit inner loop

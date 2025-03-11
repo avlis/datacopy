@@ -79,7 +79,7 @@ def readData(p_jobID:int, p_connection, p_cursor, p_fetchSize:int, p_query:str):
         logging.logPrint('exited read loop.', logLevel.DEBUG, p_jobID=p_jobID)
     else:
         logging.logPrint('testing queries mode, stopping read.', logLevel.DEBUG, p_jobID=p_jobID)
-        pass #do not remove as on production we delete the previous line
+        pass #do not remove as on production mode we comment the previous line
 
     setproctitle.setproctitle(f'datacopy: readData (abort@cursor) [{jobName}]')
     try:

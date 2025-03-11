@@ -204,13 +204,13 @@ eventQueue:mp.Queue = mp.Queue()
 logQueue:mp.Queue = mp.Queue()
 '''message format: tuple(logLevel:Enum, message, jobID:int, jobName:str, where:str)'''
 
-Working:Synchronized[bool] = mp.Value('b', True)
-runningReaders:Synchronized[int] = mp.Value('i', 0)
-runningWriters:Synchronized[int] = mp.Value('i', 0)
-ErrorOccurred:Synchronized[bool] =  mp.Value('b',False)
-stopWhenEmpty:Synchronized[bool] = mp.Value('b', False)
-logIsAlreadyClosed:Synchronized[bool] = mp.Value('b', False)
+Working:Synchronized = mp.Value('b', True)
+runningReaders:Synchronized = mp.Value('i', 0)
+runningWriters:Synchronized = mp.Value('i', 0)
+ErrorOccurred:Synchronized =  mp.Value('b',False)
+stopWhenEmpty:Synchronized = mp.Value('b', False)
+logIsAlreadyClosed:Synchronized = mp.Value('b', False)
 
-idleSecsObserved:Synchronized[int] = mp.Value('i', 0)
+idleSecsObserved:Synchronized = mp.Value('i', 0)
 
-exitCode:Synchronized[int] = mp.Value('i', 0)
+exitCode:Synchronized = mp.Value('i', 0)

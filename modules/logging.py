@@ -187,7 +187,7 @@ def closeLog():
 
     except Exception as e:
         print_message(f'closeLog: unexpected error ({sys.exc_info()[2].tb_lineno}): [{e}]') #DISABLE_IN_PROD
-        pass #do not remove, because previous line is disabled in PROD mode
+        pass #do not remove as on production mode we comment the previous line
 
 #### "Private" stuff #####################################################################
 
@@ -240,7 +240,7 @@ def monitor_memory():
         print(memStr, file=memoryStatsFile, flush=True)
     except Exception as e:
         logPrint(f'error on main process: [{e}]', logLevel.DEBUG)
-        pass #do not remove as on production we delete the previous line
+        pass #do not remove as on production mode we comment the previous line
 
     # Get memory usage of child processes
     for child in shared.collectMemoryMainProcessID.children(recursive=True):
@@ -252,13 +252,13 @@ def monitor_memory():
             print(memStr, file=memoryStatsFile, flush=True)
         except Exception as e:
             logPrint(f'error on [{processName}]: [{e}]', logLevel.DEBUG)
-            pass #do not remove as on production we delete the previous line
+            pass #do not remove as on production mode we comment the previous line
     try:
         memStr = shared.memoryStatsFormat.format(timestamp, shared.executionID, totalMem, -1, '-', 'totalMemory')
         print(memStr, file=memoryStatsFile, flush=True)
     except Exception as e:
         logPrint(f'error on total mem: [{e}]', logLevel.DEBUG)
-        pass #do not remove as on production we delete the previous line
+        pass #do not remove as on production mode we comment the previous line
 
     logPrint(f'memory stats: [{totalMem}]', logLevel.DEBUG)
 
@@ -317,6 +317,7 @@ def writeToLog_files():
     collectMemoryStatsNextTime = timer()+shared.collectMemoryStatsIntervalSecs
     dumpColNames = None
     dumpFile = None
+    dumpSeqNumber:int = 1
     sLogFilePrefix = ''
 
     bKeepGoing=True
@@ -390,16 +391,17 @@ def writeToLog_files():
                                 pass
 
                 case logLevel.DUMP_COLS:
-                    dumpColNames = message
+                    dumpColNames = ['rownum'] + message
 
                 case logLevel.DUMP_DATA:
                     if shared.DEBUG or shared.DUMP_ON_ERROR:
                         try:
-                            dumpFile = open( f'{sLogFilePrefix}.DUMP', 'w', encoding = 'utf-8')
+                            dumpFile = open( f'{sLogFilePrefix}.{dumpSeqNumber}.DUMP.csv', 'w', encoding = 'utf-8')
                             dumper=csv.writer(dumpFile, delimiter = shared.dumpFileSeparator, quoting = csv.QUOTE_MINIMAL)
                             dumper.writerow(dumpColNames) #type: ignore
                             dumper.writerows(utils.encodeSpecialChars(message))
                             dumpFile.close()
+                            dumpSeqNumber += 1
                         except Exception:
                             pass
 

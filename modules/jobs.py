@@ -31,12 +31,19 @@ class Job:
         else:
             self.jobName = f'{p_jobID}-{thisJobData["source"]}-{thisJobData["dest"]}-{thisJobData["table"]}'
 
-        self.source = thisJobData['source']
+        self.source:str = thisJobData['source']
+        self.sourceDriver:str = str(connections.getConnectionParameter(self.source, 'driver'))
+
         if 'source2' in thisJobData:
             self.source2 = thisJobData['source2']
+            self.source2Driver:str = str(connections.getConnectionParameter(self.source2, 'driver'))
         else:
-            self.source2 = ''
+            self.source2:str = ''
+            self.source2Driver:str = ''
+
         self.dest = thisJobData['dest']
+        self.destDriver:str = str(connections.getConnectionParameter(self.dest, 'driver'))
+
         self.mode = thisJobData['mode']
         self.query = thisJobData['query']
         if 'query2' in thisJobData:
@@ -58,14 +65,10 @@ class Job:
             if len(self.preQuerySrc) > 0 and self.preQuerySrc[0]  == '@':
                 self.preQuerySrc = readSqlFile(self.preQuerySrc[1:])
 
-        self.preQuerySrc = self.__add_schema_prequery(self.source, self.preQuerySrc)
-
         if 'pre_query_dst' in thisJobData:
             self.preQueryDst = thisJobData['pre_query_dst']
             if len(self.preQueryDst) > 0 and self.preQueryDst[0]  == '@':
                 self.preQueryDst = readSqlFile(self.preQueryDst[1:])
-
-        self.preQueryDst = self.__add_schema_prequery(self.dest, self.preQueryDst)
 
         if 'regexes' in thisJobData:
             regexes = thisJobData['regexes']
@@ -187,28 +190,6 @@ class Job:
 
     def __repr__(self):
         return f'Job({self.__str__()})'
-
-    @staticmethod
-    def __add_schema_prequery(p_conn_name:str, existing_prequery:str) -> str:
-        buffer = existing_prequery
-        try:
-            schema = connections.getConnectionParameter(p_conn_name, 'schema')
-            if schema is not None and len(schema) > 0:
-                driver = connections.getConnectionParameter(p_conn_name, 'driver')
-                if driver is not None:
-                    driver_schema_cmd = connections.change_schema_cmd[driver]
-                else:
-                    driver_schema_cmd = ''
-                if len(driver_schema_cmd) > 0:
-                    if len(existing_prequery) > 0:
-                        buffer = driver_schema_cmd.format(schema)
-                    else:
-                        buffer = f'{driver_schema_cmd.format(schema)}; {existing_prequery}'
-        except Exception as e:
-            logging.processError(p_e=e, p_message=f'{p_conn_name}::{existing_prequery}', p_stop=True, p_exitCode=4)
-            return ''
-
-        return buffer
 
 
 def loadJobs(p_filename:str):

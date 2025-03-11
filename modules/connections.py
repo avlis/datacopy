@@ -30,7 +30,7 @@ check_bd_version_cmd:dict[str, str] = {
 
 #to use with .format()
 change_schema_cmd:dict[str, str] = {
-    'psycopg2':     'SET search_path TO {0};',
+    'psycopg2':     'SET search_path TO {0}',
     'mysql':        'USE {0}',
     'mariadb':      'USE {0}',
     'csv':          '',
@@ -39,6 +39,19 @@ change_schema_cmd:dict[str, str] = {
     'databricks':   '',
     '':             ''
 }
+
+#to use with .format()
+change_timeout_cmd:dict[str, str] = {
+    'psycopg2':     "SET statement_timeout = '{0}s'",
+    'mysql':        'SET SESSION wait_timeout = {0}',
+    'mariadb':      'SET SESSION wait_timeout = {0}',
+    'csv':          '',
+    'cx_Oracle':    '',
+    'pyodbc':       '',
+    'databricks':   '',
+    '':             ''
+}
+
 
 insert_objects_delimiter = {
     'psycopg2':     '"',
@@ -168,7 +181,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                         nc[x].timeout = shared.idleTimeoutSecs
                     except Exception as e:
                         logging.logPrint(f'({p_name}): exception [{e}] happened while trying to set timeout to [{shared.idleTimeoutSecs}]', logLevel.DEBUG, reportFrom=True)
-                        pass #do not remove as on production we delete the previous line
+                        pass #do not remove as on production mode we comment the previous line
             except (Exception, pyodbc.DatabaseError) as e: # type:ignore
                 logging.processError(p_e=e, p_message=p_name, p_stop=True, p_exitCode=2)
                 return {}
@@ -189,12 +202,12 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                         nc[x].client_identifier=shared.applicationName
                     except Exception as e:
                         logging.logPrint(f'({p_name}): could not set client_identifier on connection: [{e}]', logLevel.DEBUG, reportFrom=True)
-                        pass #do not remove as on production we delete the previous line
+                        pass #do not remove as on production mode we comment the previous line
                     try:
                         nc[x].call_timeout = (shared.idleTimeoutSecs * 1000) # in milisecs
                     except Exception as e:
                         logging.logPrint(f'({p_name}): exception [{e}] happened while trying to set call_timeout to [{shared.idleTimeoutSecs}]', logLevel.DEBUG, reportFrom=True)
-                        pass #do not remove as on production we delete the previous line
+                        pass #do not remove as on production mode we comment the previous line
 
             except Exception as e:
                 logging.processError(p_e=e, p_message=p_name, p_stop=True, p_exitCode=2)
@@ -236,7 +249,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                         nc[x]._client_name = shared.applicationName
                     except Exception as e:
                         logging.logPrint(f'({p_name}): could not set client_name on connection: [{e}]', logLevel.DEBUG, reportFrom=True)
-                        pass #do not remove as on production we delete the previous line
+                        pass #do not remove as on production mode we comment the previous line
             except Exception as e:
                 logging.processError(p_e=e, p_message=p_name, p_stop=True, p_exitCode=2)
                 return {}
@@ -256,7 +269,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                         nc[x]._client_name = shared.applicationName
                     except Exception as e:
                         logging.logPrint(f'({p_name}): could not set client_name on connection: [{e}]', logLevel.DEBUG, reportFrom=True)
-                        pass #do not remove as on production we delete the previous line
+                        pass #do not remove as on production mode we comment the previous line
             except Exception as e:
                 logging.processError(p_e=e, p_message=p_name, p_stop=True, p_exitCode=2)
                 return {}
@@ -365,6 +378,27 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
             except Exception as error:
                 logging.logPrint(f'({p_name}): CSV error [{error}] opening file [{sFileName}]')
 
+    for x in range(p_qtd):
+        if 'schema' in c:
+            s:str = c['schema']
+            if len(s) > 0:
+                sql = change_schema_cmd[c['driver']].format(s)
+                if len(sql) > 0:
+                    try:
+                        logging.logPrint(f'({p_name}[{x}]): setting schema with [{sql}]', logLevel.INFO, reportFrom=True)
+                        nc[x].cursor().execute(sql)
+                    except Exception as e:
+                        logging.processError(p_e=e,p_message=f'({p_name}[{x}]): happened while trying to set schema', p_stop=True)
+
+        if shared.idleTimeoutSecs > 0:
+            sql:str = change_timeout_cmd[c['driver']].format(shared.idleTimeoutSecs)
+            if len(sql) > 0:
+                try:
+                    logging.logPrint(f'({p_name}[{x}]): setting timeout with [{sql}]', logLevel.INFO, reportFrom=True)
+                    nc[x].cursor().execute(sql)
+                except Exception as e:
+                    logging.processError(p_e=e, p_message=f'({p_name}[{x}]): happened while trying to set timeout', p_stop=True)
+
     try:
         sGetVersion = check_bd_version_cmd[c['driver']]
         if len(sGetVersion) > 0:
@@ -393,7 +427,7 @@ def getConnectionParameter(p_name:str, p_otion:str):
     else:
         return None
 
-def initCursor(p_conn, p_jobID:int, p_source:str, p_fetchSize:int):
+def initCursor(p_conn, p_jobID:int, p_source:str, p_sourceDriver:str, p_fetchSize:int):
     '''prepares the object that will send commands to databases'''
     # postgres: try not to fetch all rows to memory, using server side cursors
     # mysql, mariaDB: use unbuffered cursors
@@ -412,11 +446,11 @@ def initCursor(p_conn, p_jobID:int, p_source:str, p_fetchSize:int):
             newCursor = p_conn.cursor()
             logging.logPrint(f'({p_source}): got a normal cursor.', logLevel.DEBUG, p_jobID=p_jobID, reportFrom=True)
     try:
-        #only works on postgres...
+        #current only works on postgres...
         newCursor.itersize = p_fetchSize
         logging.logPrint(f'({p_source}): set cursor itersize to [{p_fetchSize}]', logLevel.DEBUG, p_jobID=p_jobID, reportFrom=True)
     except Exception as error:
         logging.logPrint(f'({p_source}): could not set cursor itersize: [{error}]', logLevel.DEBUG, p_jobID=p_jobID, reportFrom=True)
-        pass #do not remove as on production we delete the previous line
+        pass #do not remove as on production mode we comment the previous line
 
     return newCursor
