@@ -1,7 +1,5 @@
 ''' job configuration and validation'''
 
-#pylint: disable=invalid-name, broad-except, line-too-long
-
 import os
 import re
 
@@ -34,41 +32,41 @@ class Job:
         self.source:str = thisJobData['source']
         self.sourceDriver:str = str(connections.getConnectionParameter(self.source, 'driver'))
 
-        if 'source2' in thisJobData:
-            self.source2 = thisJobData['source2']
-            self.source2Driver:str = str(connections.getConnectionParameter(self.source2, 'driver'))
+        if 'key_source' in thisJobData:
+            self.key_source = thisJobData['key_source']
+            self.key_sourceDriver:str = str(connections.getConnectionParameter(self.key_source, 'driver'))
         else:
-            self.source2:str = ''
-            self.source2Driver:str = ''
+            self.key_source:str = ''
+            self.key_sourceDriver:str = ''
 
         self.dest = thisJobData['dest']
         self.destDriver:str = str(connections.getConnectionParameter(self.dest, 'driver'))
 
         self.mode = thisJobData['mode']
         self.query = thisJobData['query']
-        if 'query2' in thisJobData:
-            self.query2 = thisJobData['query2']
+        if 'key_query' in thisJobData:
+            self.key_query = thisJobData['key_query']
         else:
-            self.query2 = ''
+            self.key_query = ''
         self.preQuerySrc = ''
         self.preQueryDst = ''
 
         siObjSep = connections.getConnectionParameter(self.dest, 'insert_object_delimiter')
 
         if len(self.query) > 0 and self.query[0] == '@':
-            self.query = readSqlFile(self.query[1:])
-        if len(self.query2) > 0 and self.query2[0] == '@':
-                self.query2 = readSqlFile(self.query2[1:])
+            self.query = _readSqlFile(self.query[1:])
+        if len(self.key_query) > 0 and self.key_query[0] == '@':
+                self.key_query = _readSqlFile(self.key_query[1:])
 
         if 'pre_query_src' in thisJobData:
             self.preQuerySrc = thisJobData['pre_query_src']
             if len(self.preQuerySrc) > 0 and self.preQuerySrc[0]  == '@':
-                self.preQuerySrc = readSqlFile(self.preQuerySrc[1:])
+                self.preQuerySrc = _readSqlFile(self.preQuerySrc[1:])
 
         if 'pre_query_dst' in thisJobData:
             self.preQueryDst = thisJobData['pre_query_dst']
             if len(self.preQueryDst) > 0 and self.preQueryDst[0]  == '@':
-                self.preQueryDst = readSqlFile(self.preQueryDst[1:])
+                self.preQueryDst = _readSqlFile(self.preQueryDst[1:])
 
         if 'regexes' in thisJobData:
             regexes = thisJobData['regexes']
@@ -89,7 +87,7 @@ class Job:
                         self.regexes[r[0]] = r[1]
                         logging.logPrint(f'replacing [{r[0]}] with [{r[1]}] on queries', p_jobID=p_jobID)
                         self.query = re.sub( r[0], r[1], self.query )
-                        self.query2 = re.sub( r[0], r[1], self.query2 )
+                        self.key_query = re.sub( r[0], r[1], self.key_query )
                         self.preQuerySrc = re.sub( r[0], r[1], self.preQuerySrc )
                         self.preQueryDst = re.sub( r[0], r[1], self.preQueryDst )
 
@@ -103,6 +101,15 @@ class Job:
                 self.fetchSize = qFetchSize
         else:
             self.fetchSize = shared.defaultFetchSize
+
+        if 'key_fetch_size' in thisJobData:
+            qkFetchSize = int(thisJobData['key_fetch_size'])
+            if qkFetchSize == 0:
+                self.key_fetchSize:int = shared.defaultFetchSize
+            else:
+                self.key_fetchSize:int = qkFetchSize
+        else:
+            self.key_fetchSize = shared.defaultFetchSize
 
         self.appendKeyColumn = ''
         self.appendKeyQuery = ''
@@ -160,7 +167,7 @@ class Job:
         else:
             self.bCloseStream = True
 
-        #logging.logPrint(f'source=[{source}], source2=[{source2}], dest=[{dest}], preQuerySrc=[{preQuerySrc}] preQueryDst=[{preQueryDst}] table=[{table}] closeStream=[{bCloseStream}], CSVEncodeSpecial=[{bCSVEncodeSpecial}], appendKeyColumn=[{appendKeyColumn}], getMaxQuery=[{getMaxQuery}]', logLevel.DEBUG, p_jobID=p_jobID)
+        #logging.logPrint(f'source=[{source}], key_source=[{key_source}], dest=[{dest}], preQuerySrc=[{preQuerySrc}] preQueryDst=[{preQueryDst}] table=[{table}] closeStream=[{bCloseStream}], CSVEncodeSpecial=[{bCSVEncodeSpecial}], appendKeyColumn=[{appendKeyColumn}], getMaxQuery=[{getMaxQuery}]', logLevel.DEBUG, p_jobID=p_jobID)
         logging.logPrint(f'created:\n{json.dumps(self.to_dict(), indent=2)}\n', logLevel.DEBUG, p_jobID=p_jobID)
 
     def to_dict(self) -> dict[str, Any]:
@@ -192,137 +199,163 @@ class Job:
         return f'Job({self.__str__()})'
 
 
-def loadJobs(p_filename:str):
+def load(p_filename:str) -> dict[int, dict[str, Any]]:
     '''loads job file into memory'''
+
+    j:dict[int, dict[str, Any]] = {}
     try:
-        j = utils.read_csv_config(p_filename, emptyValuesDefault='', sequencialLineNumbers=True)
+        j:dict[int, dict[str, Any]] = utils.read_csv_config(p_filename, emptyValuesDefault='', sequencialLineNumbers=True)
     except Exception as error:
         logging.processError(p_e=error, p_message=f'Loading [{p_filename}]', p_stop=True, p_exitCode=3)
-        return
-    shared.jobs = j
+        return {}
+
     logging.logPrint(f'raw loaded jobs file:\n{json.dumps(j, indent=2)}\n', logLevel.DEBUG)
+    return j
 
-def preCheckSqlFile(p_filename:str, p_errorTitle:str):
-    '''checks that a sql file exists, considering #include directives, and is not empty'''
-    logging.logPrint(f'checking {p_errorTitle} file [{p_filename}]...', logLevel.DEBUG)
-    if not os.path.isfile(p_filename):
-        logging.processError(p_message=f'query file [{p_filename}] does not exist! giving up.', p_stop=True, p_exitCode=4)
-        return
-    else:
-        buffer = readSqlFile(p_filename)
-        if len(buffer) == 0:
-            logging.processError(p_message=f'{p_errorTitle} file [{p_filename}] is empty! giving up.', p_stop=True, p_exitCode=4)
-            return
-
-def preCheck():
+def preCheck(raw_jobs:dict[int, dict[str, Any]]) -> dict[int, dict[str, Any]]:
     '''checks that config files are consistent'''
 
     logging.logPrint('checking sources and destinations...')
 
-    for key in shared.jobs.keys():
-        aJob:dict[str, Any] = shared.jobs[key]
+    allJobs:dict[int, dict[str, Any]] = {}
+
+    for key in raw_jobs.keys():
+        aJob=raw_jobs[key]
         for ecol in expected_query_columns:
             if ecol not in aJob:
                 logging.processError(p_message=f'[{key}]: Missing column on queries file: [{ecol}]', p_stop=True, p_exitCode=4)
-                return
+                return {}
         source = aJob['source']
+        sourceDriver = connections.getConnectionParameter(source, 'driver')
         dest = aJob['dest']
+        destDriver = connections.getConnectionParameter(dest, 'driver')
         mode = aJob['mode']
         query = aJob['query']
-        if 'dest2' in aJob:
-            dest2 = aJob['dest2']
+
+        if 'key_source' in aJob:
+            key_source = aJob['key_source']
+            key_sourceDriver =connections.getConnectionParameter(key_source, 'driver')
         else:
-            dest2 = ''
+            key_source = ''
+            key_sourceDriver = ''
+
         if 'append_source' in aJob:
             apDest = aJob['append_source']
+            apDestDriver = connections.getConnectionParameter(apDest, 'driver')
         else:
             apDest = ''
-        if 'query2' in aJob:
-            query2 = aJob['query2']
+            apDestDriver = ''
+
+        if 'key_query' in aJob:
+            key_query = aJob['key_query']
         else:
-            query2 = ''
+            key_query = ''
 
         if source not in shared.connections:
-            logging.processError(p_message=f'data source [{source}] not declared on connections.csv. giving up.', p_stop=True, p_exitCode=4)
-            return
+            logging.processError(p_message=f'data source [{source}] not declared on connections. giving up.', p_stop=True, p_exitCode=4)
+            return {}
 
-        if connections.getConnectionParameter(source, 'driver') == 'csv':
-            logging.processError(p_message=f"ERROR: csv driver requested as source on [{source}], but it's only available as destination yet. giving up.", p_stop=True, p_exitCode=4)
-            return
+        if key_source != '' and key_source not in shared.connections:
+            logging.processError(p_message=f'keys source [{key_source}] not declared on connections. giving up.', p_stop=True, p_exitCode=4)
+            return {}
 
-        if connections.getConnectionParameter(dest, 'driver') == 'csv':
+        if dest not in shared.connections:
+            logging.processError(p_message=f'data destination [{dest}] not declared on connections. giving up.', p_stop=True, p_exitCode=4)
+            return {}
+
+        if destDriver == 'csv':
             if 'insert_cols' in aJob:
                 if aJob['insert_cols'] == '@d':
                     logging.processError(p_message=f'cannot infer (yet) insert cols from a csv destination (jobs line{key+1}). giving up.', p_stop=True, p_exitCode=4)
-                    return
+                    return {}
 
-        if dest not in shared.connections:
-            logging.processError(p_message=f'data destination [{dest}] not declared on connections.csv. giving up.', p_stop=True, p_exitCode=4)
-            return
-
-        if len(dest2) > 0:
-            if dest2 not in shared.connections:
-                logging.processError(p_message=f'data sub-destination [{dest2}] not declared on connections.csv. giving up.', p_stop=True, p_exitCode=4)
-                return
+        if key_source != '' and sourceDriver == 'csv':
+            logging.processError(p_message='Query and SubQuery mode does not support main data from csv (yet), only for keys. giving up.')
+            return {}
 
         if len(apDest) > 0:
             if apDest not in shared.connections:
-                logging.processError(p_message=f'append source [{apDest}] not declared on connections.csv. giving up.', p_stop=True, p_exitCode=4)
-                return
+                logging.processError(p_message=f'append source [{apDest}] not declared on connections. giving up.', p_stop=True, p_exitCode=4)
+                return {}
 
         if len(query) > 0:
             if query[0] == '@':
-                preCheckSqlFile(query[1:], 'query')
+                if not _preCheckSqlFile(query[1:], 'query'): return {}
         else:
             logging.processError(p_message='query cannot be empty!! giving up.', p_stop=True, p_exitCode=4)
-            return
+            return {}
 
-        if len(query2) > 0:
-            if query2[0] == '@':
-                preCheckSqlFile(query2[1:], 'sub-query')
+        if len(key_query) > 0:
+            if key_query[0] == '@':
+                if not _preCheckSqlFile(key_query[1:], 'key_query'): return {}
+
+            if len(key_source) > 0:
+                if key_source not in shared.connections:
+                    logging.processError(p_message=f'key_query specified, but key_source [{key_source}] not declared on connections. giving up.', p_stop=True, p_exitCode=4)
+                    return {}
+            else:
+                logging.processError(p_message=f'key_query specified, but no key_source specified on connections. giving up.', p_stop=True, p_exitCode=4)
+                return {}
 
         if 'pre_query_src' in aJob:
             preQuerySrc = aJob['pre_query_src']
             if len(preQuerySrc) > 0 and preQuerySrc[0] == '@':
-                preCheckSqlFile(preQuerySrc[1:], 'pre-query on source')
+                if not _preCheckSqlFile(preQuerySrc[1:], 'pre-query on source'): return {}
+
+        if 'pre_query_key' in aJob:
+            preQuerySrc2 = aJob['pre_query_key']
+            if len(preQuerySrc2) > 0 and preQuerySrc2[0] == '@':
+                if not _preCheckSqlFile(preQuerySrc2[1:], 'pre_query_key on key_source'): return {}
+
+            if len(key_source) > 0:
+                if key_source not in shared.connections:
+                    logging.processError(p_message=f'pre_query_key specified, but key_source [{key_source}] not declared on connections. giving up.', p_stop=True, p_exitCode=4)
+                    return {}
+            else:
+                logging.processError(p_message=f'pre_query_key specified, but no key_source specified on connections. giving up.', p_stop=True, p_exitCode=4)
+                return {}
 
         if 'pre_query_dst' in aJob:
             preQueryDst = aJob['pre_query_dst']
             if len(preQueryDst) >0 and preQueryDst[0] == '@':
-                preCheckSqlFile(preQueryDst[1:], 'pre-query on destination')
+                if not _preCheckSqlFile(preQueryDst[1:], 'pre-query on destination'): return {}
 
         if 'regexes' in aJob:
             regex = aJob['regexes']
             if len(regex) > 0 and regex[0] == '@':
                 if not os.path.isfile(regex[1:]):
                     logging.processError(p_message=f'regex file [{regex[1:]}] does not exist! giving up.', p_stop=True, p_exitCode=4)
-                    return
+                    return {}
 
         if mode.upper() == 'A':
             if 'append_column' in aJob:
                 apCol = aJob['append_column']
                 if len(apCol) == 0:
                     logging.processError(p_message='append column is empty! giving up.', p_stop=True, p_exitCode=4)
-                    return
+                    return {}
             else:
                 logging.processError(p_message='Mode A set, but append column not specified! giving up.', p_stop=True, p_exitCode=4)
-                return
-
+                return {}
 
         if 'append_query' in aJob:
             apQuery = aJob['append_query']
             if len(apQuery) > 0 and apQuery[0] == '@':
                 if not os.path.isfile(apQuery[1:]):
                     logging.processError(p_message=f'append query file [{apQuery[1:]}] does not exist! giving up.', p_stop=True, p_exitCode=4)
-                    return
+                    return {}
 
         #prebuild the jobName used in logs and stats
         aJob['jobName'] =  f'{key}-{source}-{dest}-{aJob["table"]}'
 
+        allJobs[key]=aJob
     #buffer = StringIO() ; print(shared.jobs, file=buffer, flush=True); logging.logPrint(f'final jobs data:\n{buffer.getvalue()}\n', logLevel.DEBUG)
-    logging.logPrint(f'final jobs data:\n{json.dumps(shared.jobs, indent=2)}\n', logLevel.DEBUG)
+    logging.logPrint(f'final jobs data:\n{json.dumps(allJobs, indent=2)}\n', logLevel.DEBUG)
 
-def readSqlFile(p_filename:str, p_parentFilename:str = '') -> str:
+    return allJobs
+
+### PRIVATE STUFF
+
+def _readSqlFile(p_filename:str, p_parentFilename:str = '') -> str:
     '''Reads a SQL file, handling #include directives.'''
     logging.logPrint(f'reading file [{p_filename}] (ref from [{p_parentFilename}])', logLevel.DEBUG)
     buffer = ''
@@ -332,8 +365,8 @@ def readSqlFile(p_filename:str, p_parentFilename:str = '') -> str:
                 if line.startswith('#include '):
                     # Extract the filename from the #include directive
                     include_filename = line[9:].strip()
-                    # Recursively call readSqlFile to read the included file
-                    buffer += readSqlFile(include_filename, p_filename)
+                    # Recursively call _readSqlFile to read the included file
+                    buffer += _readSqlFile(include_filename, p_filename)
                 else:
                     # Append the current line to the buffer
                     buffer += line
@@ -344,3 +377,16 @@ def readSqlFile(p_filename:str, p_parentFilename:str = '') -> str:
         else:
             logging.processError(p_message=f'error trying to read sql file [{p_filename}] mentioned in [{p_parentFilename}]: [{error}]', p_stop=True, p_exitCode=4)
         return ''
+
+def _preCheckSqlFile(p_filename:str, p_errorTitle:str) -> bool:
+    '''checks that a sql file exists, considering #include directives, and is not empty'''
+    logging.logPrint(f'checking {p_errorTitle} file [{p_filename}]...', logLevel.DEBUG)
+    if not os.path.isfile(p_filename):
+        logging.processError(p_message=f'query file [{p_filename}] does not exist! giving up.', p_stop=True, p_exitCode=4)
+        return False
+    else:
+        buffer = _readSqlFile(p_filename)
+        if len(buffer) == 0:
+            logging.processError(p_message=f'{p_errorTitle} file [{p_filename}] is empty! giving up.', p_stop=True, p_exitCode=4)
+            return False
+    return True

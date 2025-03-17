@@ -73,13 +73,13 @@ export no_proxy=${NO_PROXY}
 echo "*** datacopy container version [${BASE_VERSION}][${VERSION}] ***"
 echo "*** launching with container user [${RUN_UNAME}:${RUN_GNAME}], UID=${RUN_UID}, GID=${RUN_GID} ***"
 echo "*** http proxy settings http=[${http_proxy}], https=[${https_proxy}], no_proxy=[${no_proxy}] ***"
-echo "*** received parameters: [$@]"
+echo "*** received parameters: [$*]"
 
 if [ "${BUILD_DEBUG}" == "yes" ]; then
     echo "BUILD_DEBUG is set, launching bash"
     /bin/bash
 else
-    su -p -g ${RUN_GNAME} ${RUN_UNAME} -c "/usr/local/bin/python3 /usr/local/bin/datacopy.py $1 $2 $3" &
+    su -p -g ${RUN_GNAME} ${RUN_UNAME} -c "/usr/local/bin/python3 /usr/local/bin/datacopy.py $*" &
     sudo_pid=$!
     wait ${sudo_pid}
 fi

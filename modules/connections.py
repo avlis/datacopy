@@ -1,7 +1,5 @@
 '''connections handling stuff'''
 
-#pylint: disable=invalid-name, broad-except, import-outside-toplevel, c-extension-no-member, line-too-long
-
 import os
 import csv
 
@@ -79,33 +77,42 @@ def cx_Oracle_OutputTypeHandler(cursor, name, defaultType, size, precision, scal
     if defaultType == cx_Oracle.DB_TYPE_BLOB:
         return cursor.var(cx_Oracle.DB_TYPE_LONG_RAW, arraysize = cursor.arraysize)
 
-def loadConnections(p_filename:str):
+def load(p_filename:str) -> dict[int, dict[str, Any]]:
     '''
     load connections file into memory
     '''
 
-    conns:dict[str, Any] = {}
+    c:dict[int, dict[str, Any]] = {}
     try:
         c=utils.read_csv_config(p_filename, emptyValuesDefault='', sequencialLineNumbers=True)
     except Exception as e:
         logging.processError(p_e=e, p_message=f'Loading [{p_filename}]', p_stop=True, p_exitCode=1)
-        return
+        return {}
 
     logging.logPrint(f'raw loaded connections file:\n{json.dumps(c, indent=2)}\n', logLevel.DEBUG)
 
-    for key in c.keys():
-        aConn:dict[str, Any] = c[key]
+    return c
+
+def preCheck(raw_connections:dict[int, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    '''
+    pre-check connections file
+    '''
+
+    conns:dict[str, Any] = {}
+
+    for key in raw_connections.keys():
+        aConn:dict[str, Any] = raw_connections[key]
         cName = aConn['name']
 
         if cName in conns:
             logging.processError(p_message=f'[{cName}]: Duplicate connection name in line [{key}]', p_stop=True, p_exitCode=1)
-            return
+            return {}
 
         if aConn['driver'] == 'csv':
             for ecol in expected_conns_columns_csv:
                 if ecol not in aConn:
                     logging.processError(p_message=f'[{cName}]: Missing value on connections file: [{ecol}]', p_stop=True, p_exitCode=1)
-                    return
+                    return {}
             nc = {
                 'driver':       aConn['driver'],
                 'paths':        aConn['paths'],
@@ -116,7 +123,7 @@ def loadConnections(p_filename:str):
             for ecol in expected_conns_columns_db:
                 if ecol not in aConn:
                     logging.processError(p_message=f'[{cName}]: Missing value on connections file: [{ecol}]', p_stop=True, p_exitCode=1)
-                    return
+                    return {}
             if 'trustservercertificate' in aConn:
                 sTSC = aConn['trustservercertificate']
             else:
@@ -154,16 +161,16 @@ def loadConnections(p_filename:str):
 
         conns[cName] = nc
 
-    shared.connections = conns
     logging.logPrint(f'final connections data:\n{json.dumps(conns, indent=2)}\n', logLevel.DEBUG)
+    return conns
 
-def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_mode = 'w') -> dict[int, Any]:
+def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_mode = 'w', p_test_mode:bool=False) -> dict[int, Any]:
     ''' creates connection objects to sources or destinations
         returns an array of connections, if connecting to databases, or an array of tupples of (file, stream), if driver == csv
     '''
 
+    logging.logPrint(f'called, name=[{p_name}], qtd=[{p_qtd}], readOnly={p_readOnly}, tableName=[{p_tableName}], mode=[{p_mode}], p_test_mode={p_test_mode}', logLevel.DEBUG)
     nc:dict[int, Any] = {}
-
     c = shared.connections[p_name]
 
     logging.logPrint(f'({p_name}): trying to connect...', logLevel.DEBUG, reportFrom=True)
@@ -242,7 +249,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                         database=c['database'],
                         user=c['user'],
                         password = c['password'],
-                        connection_timeout = shared.connectionTimeoutSecs
+                        connect_timeout = shared.connectionTimeoutSecs
 
                     )
                     try:
@@ -263,7 +270,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                         database=c['database'],
                         user=c['user'],
                         password = c['password'],
-                        connection_timeout = shared.connectionTimeoutSecs
+                        connect_timeout = shared.connectionTimeoutSecs
                     )
                     try:
                         nc[x]._client_name = shared.applicationName
@@ -326,21 +333,6 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                 return {}
 
         case 'csv':
-            if 'paths' in c:
-                _paths=c['paths'].split('|')
-            else:
-                _paths = ('.') #pylint:disable=superfluous-parens
-
-            for _path in _paths:
-                if not os.path.isdir(_path):
-                    try:
-                        os.makedirs(name=_path)
-                    except Exception as e:
-                        logging.processError(p_message=f'({p_name}): directory does not exist, and exception happened when trying to create it [{_path}]', p_stop=True, p_exitCode=2)
-                        return {}
-
-            sFileName = ''
-            logging.logPrint(f'({p_name}): dumping CSV files to {_paths}', logLevel.DEBUG, reportFrom=True)
             try:
                 _delim = utils.delimiter_decoder(c['delimiter'])
                 logging.logPrint(f'({p_name}): csv delimiter set to [{_delim}]', logLevel.DEBUG, reportFrom=True)
@@ -356,28 +348,58 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
 
             csv.register_dialect(p_name, delimiter = _delim, quoting = _quote)
             logging.logPrint(f'({p_name}): registering csv dialect with delim=[{_delim}], quoting=[{_quote}]', logLevel.DEBUG, reportFrom=True)
-            try:
-                if p_qtd > 1:
-                    ipath=0
-                    for x in range(p_qtd):
-                        sFileName = os.path.join(_paths[ipath], f'{p_tableName}_{x+1}.csv')
-                        if ipath<len(_paths)-1:
-                            ipath += 1
-                        else:
-                            ipath = 0
+
+            if p_readOnly:
+                # connections for readers
+                if 'paths' in c:
+                    _paths=c['paths'].split('|')
+                else:
+                    _paths = ('.')
+                sFileName = os.path.join(_paths[0], p_tableName)
+                logging.logPrint(f'({p_name}): opening for reading, file=[{sFileName}], mode=[{p_mode}]', logLevel.DEBUG, reportFrom=True)
+                fileHandle = open(sFileName, p_mode, encoding = 'utf-8')
+                newStream = csv.reader(fileHandle, dialect = p_name)
+                nc[0] = (fileHandle, newStream)
+            else:
+                # connections for writers
+                if 'paths' in c:
+                    _paths=c['paths'].split('|')
+                else:
+                    _paths = ('.')
+
+                for _path in _paths:
+                    if not os.path.isdir(_path):
+                        try:
+                            os.makedirs(name=_path)
+                        except Exception as e:
+                            logging.processError(p_message=f'({p_name}): directory does not exist, and exception happened when trying to create it [{_path}]', p_stop=True, p_exitCode=2)
+                            return {}
+
+                sFileName = ''
+                logging.logPrint(f'({p_name}): dumping CSV files to {_paths}', logLevel.DEBUG, reportFrom=True)
+                try:
+                    if p_qtd > 1:
+                        ipath=0
+                        for x in range(p_qtd):
+                            sFileName = os.path.join(_paths[ipath], f'{p_tableName}_{x+1}.csv')
+                            if ipath<len(_paths)-1:
+                                ipath += 1
+                            else:
+                                ipath = 0
+                            logging.logPrint(f'({p_name}): opening file=[{sFileName}], mode=[{p_mode}]', logLevel.DEBUG, reportFrom=True)
+                            newFile = open(sFileName, p_mode, encoding = 'utf-8')
+                            newStream = csv.writer(newFile, dialect = p_name)
+                            nc[x] = (newFile, newStream)
+                    else:
+                        sFileName = os.path.join(_paths[0], f'{p_tableName}.csv')
                         logging.logPrint(f'({p_name}): opening file=[{sFileName}], mode=[{p_mode}]', logLevel.DEBUG, reportFrom=True)
                         newFile = open(sFileName, p_mode, encoding = 'utf-8')
                         newStream = csv.writer(newFile, dialect = p_name)
-                        nc[x] = (newFile, newStream)
-                else:
-                    sFileName = os.path.join(_paths[0], f'{p_tableName}.csv')
-                    logging.logPrint(f'({p_name}): opening file=[{sFileName}], mode=[{p_mode}]', logLevel.DEBUG, reportFrom=True)
-                    newFile = open(sFileName, p_mode, encoding = 'utf-8')
-                    newStream = csv.writer(newFile, dialect = p_name)
-                    nc[0] = (newFile, newStream)
-            except Exception as error:
-                logging.logPrint(f'({p_name}): CSV error [{error}] opening file [{sFileName}]')
+                        nc[0] = (newFile, newStream)
+                except Exception as error:
+                    logging.logPrint(f'({p_name}): CSV error [{error}] opening file [{sFileName}]')
 
+    # all connections: change schemas if applicable, and set timeouts.
     for x in range(p_qtd):
         if 'schema' in c:
             s:str = c['schema']
@@ -400,14 +422,22 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                     logging.processError(p_e=e, p_message=f'({p_name}[{x}]): happened while trying to set timeout', p_stop=True)
 
     try:
+        if p_test_mode:
+            connTestLogLevel = logLevel.INFO
+            reportFrom = False
+        else:
+            connTestLogLevel = logLevel.DEBUG
+            reportFrom = True
+
         sGetVersion = check_bd_version_cmd[c['driver']]
         if len(sGetVersion) > 0:
             cur = nc[0].cursor() # type: ignore
             logging.logPrint(f'({p_name}): testing connection, getting version with [{sGetVersion}]...', logLevel.DEBUG, reportFrom=True)
             cur.execute(sGetVersion)
             db_version = cur.fetchone()
-            logging.logPrint(f'({p_name}): ok, connected to DB version: {db_version}', logLevel.DEBUG, reportFrom=True)
-            logging.logPrint(f'({p_name}): connected')
+            logging.logPrint(f'({p_name}): ok, connected to DB version: {db_version}', connTestLogLevel, reportFrom=reportFrom)
+            if not p_test_mode:
+                logging.logPrint(f'({p_name}): connected')
             cur.close()
     except Exception as e:
         logging.processError(p_e=e, p_message=p_name, p_stop=True, p_exitCode=2)
@@ -427,7 +457,7 @@ def getConnectionParameter(p_name:str, p_otion:str):
     else:
         return None
 
-def initCursor(p_conn, p_jobID:int, p_source:str, p_sourceDriver:str, p_fetchSize:int):
+def initCursor(p_conn, p_jobID:int, p_source:str, p_fetchSize:int):
     '''prepares the object that will send commands to databases'''
     # postgres: try not to fetch all rows to memory, using server side cursors
     # mysql, mariaDB: use unbuffered cursors
@@ -454,3 +484,12 @@ def initCursor(p_conn, p_jobID:int, p_source:str, p_sourceDriver:str, p_fetchSiz
         pass #do not remove as on production mode we comment the previous line
 
     return newCursor
+
+def testConnections():
+    '''test all connections'''
+    logging.logPrint('testing connections:')
+    for key in shared.connections.keys():
+        try:
+            testConn=initConnections(p_name=key, p_readOnly=True, p_qtd=1, p_test_mode=True)[0] # type: ignore
+        except:
+            pass

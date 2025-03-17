@@ -1,9 +1,8 @@
 '''log and stats stuff'''
 
-#pylint: disable=invalid-name, broad-except, bare-except, line-too-long
 import os
 import sys
-import setproctitle
+from setproctitle import setproctitle
 import multiprocessing as mp
 import queue
 import inspect
@@ -52,8 +51,15 @@ def logPrint(p_message, p_logLevel:logLevel=logLevel.INFO, *, p_jobID:Optional[i
 
     jobName:Optional[str] = None
 
-    if p_logLevel == logLevel.DEBUG and not shared.DEBUG:
-        return
+    if p_logLevel == logLevel.DEBUG:                        #DISABLE_IN_PROD
+        if not shared.DEBUG:                                #DISABLE_IN_PROD
+            return                                          #DISABLE_IN_PROD
+        else:                                               #DISABLE_IN_PROD
+            if len(shared.DEBUG_MODULES) > 0:           #DISABLE_IN_PROD
+                where = whoAmI().split('.')[1]          #DISABLE_IN_PROD
+                if where not in shared.DEBUG_MODULES:       #DISABLE_IN_PROD
+                    #print(f'rejecting debug message for module [{where}][{len(shared.DEBUG_MODULES)}][{shared.DEBUG_MODULES}]')
+                    return                                  #DISABLE_IN_PROD
 
     match p_logLevel:
         case logLevel.DUMP_COLS | logLevel.DUMP_DATA:
@@ -119,6 +125,8 @@ def processError(p_e:Optional[Exception]=None, p_stack:Optional[str]=None, p_mes
     if p_stop is not None and p_stop:
         with shared.stopWhenEmpty.get_lock():
             shared.stopWhenEmpty.value = True
+        with shared.stopWhenKeysEmpty.get_lock():
+            shared.stopWhenKeysEmpty.value = False
 
         with shared.Working.get_lock():
             shared.Working.value = False
@@ -309,7 +317,7 @@ def writeToLog_files():
 
     utils.block_signals()
 
-    setproctitle.setproctitle('datacopy: log file writer')
+    setproctitle('datacopy: log file writer')
 
     logFile = None
     statsFile = None
@@ -328,7 +336,7 @@ def writeToLog_files():
             idleCount = 0
 
             if logLevel == logLevel.STATSONPROCNAME:
-                setproctitle.setproctitle(f'datacopy: log writer [{message}]')
+                setproctitle(f'datacopy: log writer [{message}]')
                 continue
 
             timestamp = shared.logTimestampFunction()
@@ -457,7 +465,7 @@ def writeToLog_files():
                 case logLevel.CLOSE:
                     if shared.DEBUG:
                         print('writeToLog_files: received CLOSE message.', file=sys.stderr, flush=True)
-                        setproctitle.setproctitle('datacopy: log file writer, closing')
+                        setproctitle('datacopy: log file writer, closing')
 
                     if logFile:
                         logFile.flush()
@@ -489,13 +497,13 @@ def writeToLog_files():
                 case logLevel.END:
                     if shared.DEBUG:
                         print('writeToLog_files: received END message.', file=sys.stderr, flush=True)
-                        setproctitle.setproctitle('datacopy: log file writer, ending')
+                        setproctitle('datacopy: log file writer, ending')
                     bKeepGoing = False
 
         except queue.Empty:
             idleCount += 1
             if idleCount > 30:
-                setproctitle.setproctitle(f'datacopy: log file writer, idleCount=[{idleCount}], Working=[{shared.Working.value}], eventQueueSize=[{shared.eventQueue.qsize()}], dataQueueSize=[{shared.dataQueue.qsize()}]')
+                setproctitle(f'datacopy: log file writer, idleCount=[{idleCount}], Working=[{shared.Working.value}], eventQueueSize=[{shared.eventQueue.qsize()}], dataQueueSize=[{shared.dataQueue.qsize()}]')
         except OSError:
             if shared.DEBUG:
                 print('writeToLog_files: EOError exception. giving up.', file=sys.stderr, flush=True)
@@ -511,4 +519,4 @@ def writeToLog_files():
 
     if shared.DEBUG:
         print('writeToLog_files: exiting...', file=sys.stderr, flush=True)
-    setproctitle.setproctitle('datacopy: log file writer, ended')
+    setproctitle('datacopy: log file writer, ended')

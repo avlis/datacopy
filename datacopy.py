@@ -24,18 +24,23 @@ or by ENV vars, some examples:
     -- STATS_IN_JSON (default no)
     -- PARALLEL_READERS (default 1)
 
+    check README.md for more info.
+
 '''
 
 import sys
 import os
 import signal
+import argparse
 
 from time import sleep
 
 import multiprocessing as mp
 mp.set_start_method('fork')
 
-import setproctitle
+from setproctitle import setproctitle
+
+from typing import Any
 
 import modules.shared as shared
 import modules.logging as logging
@@ -63,19 +68,39 @@ def Main():
     signal.signal(signal.SIGINT, sig_handler)
     signal.signal(signal.SIGTERM, sig_handler)
 
-    #argv[3] is now interpreted on shared
+    parser = argparse.ArgumentParser(description='datacopy utility.')
+    parser.add_argument('action', help='Action to perform. Can be "copy", "checkConfigOnly", "convertConfig2Json", "testQueriesOnly", "testConnectionsOnly", or "help". If "help" is passed, a description of these commands will be provided. Defaults to "copy".', default='copy', nargs='?')
+    parser.add_argument('-l', '--logname', help='Name of the log file. Defaults to LOG_NAME environment variable or current timestamp if not set.', default=None)
+    parser.add_argument('-j', '--jobfile', help='Name of the job file. Defaults to JOB_FILE environment variable or "job.csv" if not set.', default=None)
+    parser.add_argument('-c', '--connectionsfile', help='Name of the connections file. Defaults to CONNECTIONS_FILE environment variable or "connections.csv" if not set.', default=None)
+    args = parser.parse_args()
 
-    if len(sys.argv) < 3:
-        q_filename = os.getenv('JOB_FILE','jobs.csv')
+    if args.action == 'help':
+        print('''
+        "copy" - This is the default action. It will copy data according to the configuration.
+        "checkConfigOnly" - This will only check the configuration files for errors.
+        "convertConfig2Json" - This will convert the configuration files to JSON format.
+        "testQueriesOnly" - This will test the queries in the configuration files.
+        "testConnectionsOnly" - This will test the connections in the configuration files.
+        ''')
+        return
+
+    if args.logname is None:
+        shared.logName = os.getenv('LOG_NAME',shared.timestamp_compact())
     else:
-        q_filename = sys.argv[2]
+        shared.logName = args.logname
 
-    if len(sys.argv) < 2:
+    if args.jobfile is None:
+        q_filename = os.getenv('JOB_FILE','job.csv')
+    else:
+        q_filename = args.jobfile
+
+    if args.connectionsfile is None:
         c_filename = os.getenv('CONNECTIONS_FILE','connections.csv')
     else:
-        c_filename = sys.argv[1]
+        c_filename = args.connectionsfile
 
-    setproctitle.setproctitle(f'datacopy: main thread [{q_filename}]')
+    setproctitle(f'datacopy: main thread [{q_filename}]')
     shared.applicationName = 'datacopy[{q_filename}]'
 
     logging.logThread = mp.Process(target=logging.writeToLog_files)
@@ -84,28 +109,45 @@ def Main():
     logging.openLog()
 
     logging.logPrint(f"datacopy version [{os.getenv('BASE_VERSION','<unkown>')}][{os.getenv('VERSION','<unkown>')}] starting")
-    logging.logPrint(f'executionID: [{shared.executionID}]')
+    logging.logPrint(f'executionID: [{shared.executionID}], mode: [{args.action}]')
     logging.logPrint('copyData()', logLevel.DUMP_SHARED) #DISABLE_IN_PROD
 
-    if shared.Working.value:
-        connections.loadConnections(c_filename)
+    raw_jobs:dict[int, dict[str, Any]] = {}
+    raw_connections:dict[int, dict[str, Any]] = {}
 
     if shared.Working.value:
-        jobs.loadJobs(q_filename)
+        raw_connections = connections.load(c_filename)
+
+    shared.connections = connections.preCheck(raw_connections)
 
     if shared.Working.value:
-        jobs.preCheck()
+        raw_jobs = jobs.load(q_filename)
 
     if shared.Working.value:
-        cd = mp.Process(target=jobshandler.jobManager)
-        cd.start()
-        while shared.Working.value:
-            sleep(2)
-        cd.join()
+        shared.jobs = jobs.preCheck(raw_jobs)
+
+    if args.action == 'checkConfigOnly':
+        logging.logPrint('configuration is valid.')
+        logging.closeLog()
+
+    if args.action == 'testConnectionsOnly':
+        connections.testConnections()
+        logging.logPrint('testing connections only, exiting here.')
+        logging.closeLog()
+
+    if args.action == 'testQueriesOnly':
+        shared.TEST_QUERIES = True
+
+    if args.action in ('copy', 'testQueries'):
+        if shared.Working.value:
+            cd = mp.Process(target=jobshandler.jobManager)
+            cd.start()
+            while shared.Working.value:
+                sleep(2)
+            cd.join()
 
     logging.logPrint('exited copydata!', logLevel.DEBUG)
 
-    #pylint: disable=consider-using-dict-items
     logging.logPrint(f'making sure all read threads are terminated [{len(shared.readP)}]...', logLevel.DEBUG)
     for i in shared.readP:
         try:

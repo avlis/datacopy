@@ -1,9 +1,6 @@
 '''global shared objecs and constants'''
 
-#pylint: disable=invalid-name, line-too-long
-
 import os
-import sys
 import psutil
 
 import inspect
@@ -31,14 +28,26 @@ E_END = 32
 E_ERROR = 64
 E_STOP = 128
 
+E_KEYS = 265
+E_DETAIL = 512
+
 E_QUERY_START = E_QUERY + E_START
 E_QUERY_ERROR = E_QUERY + E_ERROR
 E_QUERY_END = E_QUERY + E_END
+
+E_KEYS_QUERY_START = E_QUERY + E_KEYS + E_START
+E_KEYS_QUERY_ERROR = E_QUERY + E_KEYS + E_ERROR
+E_KEYS_QUERY_END = E_QUERY + E_KEYS + E_END
+
+E_DETAIL_QUERY_START = E_QUERY + E_DETAIL + E_START
+E_DETAIL_QUERY_ERROR = E_QUERY + E_DETAIL + E_ERROR
+E_DETAIL_QUERY_END = E_QUERY + E_DETAIL + E_END
 
 E_BOOT_READER = E_BOOT + E_READ
 E_READ_START = E_READ + E_START
 E_READ_ERROR = E_READ + E_ERROR
 E_READ_END = E_READ + E_END
+E_KEYS_READ_END = E_KEYS + E_READ_END
 
 E_WRITE_START = E_WRITE + E_START
 E_WRITE_ERROR = E_WRITE + E_ERROR
@@ -66,8 +75,12 @@ def timestamp_unix() -> float:
 # Job Name Calculator, used in multiple places
 
 def getJobName(p_jobID:int) -> str:
+    if p_jobID < 0:
+        jobID = p_jobID * -1
+    else:
+        jobID = p_jobID
     try:
-        return jobs[p_jobID]['jobName']
+        return jobs[jobID]['jobName']
     except:
         return 'global'
 
@@ -86,6 +99,10 @@ SCREEN_STATS:bool = bool(os.getenv('SCREEN_STATS','yes') == 'yes')
 
 SCREEN_STATS_TO_STDOUT:bool = bool(os.getenv('SCREEN_STATS_OUTPUT','stderr') == 'stdout')
 
+DEBUG_MODULES:list[str] = os.getenv('DEBUG_MODULES','').split(',')
+if DEBUG_MODULES[0] == '':
+    DEBUG_MODULES = []
+DEBUG_READWRITES:bool = bool(os.getenv('DEBUG_READWRITES','no') == 'yes')
 DEBUG_TO_STDERR:bool = bool(os.getenv('DEBUG_TO_STDERR','no') == 'yes')
 DEBUG_TO_LOG:bool = bool(os.getenv('DEBUG_TO_LOG','no') == 'yes')
 
@@ -184,11 +201,6 @@ writeP:dict[int, Any] = {}
 
 logName:str = ''
 
-if len(sys.argv) < 4:
-    logName = os.getenv('LOG_NAME',timestamp_compact())
-else:
-    logName = sys.argv[3]
-
 maxQueueLenObserved:int = 0
 maxQueueLenObservedEvents:int = 0
 
@@ -196,6 +208,9 @@ maxQueueLenObservedEvents:int = 0
 #### OBJECTS shared / edited in multithreads  #####################################################
 
 dataQueue:mp.Queue = mp.Queue(queueSize)
+''' message format: just a bData object returned by cursor.fetchmany()'''
+
+dataKeysQueue:mp.Queue = mp.Queue(queueSize)
 ''' message format: just a bData object returned by cursor.fetchmany()'''
 
 eventQueue:mp.Queue = mp.Queue()
@@ -209,6 +224,7 @@ runningReaders:Synchronized = mp.Value('i', 0)
 runningWriters:Synchronized = mp.Value('i', 0)
 ErrorOccurred:Synchronized =  mp.Value('b',False)
 stopWhenEmpty:Synchronized = mp.Value('b', False)
+stopWhenKeysEmpty:Synchronized = mp.Value('b', False)
 logIsAlreadyClosed:Synchronized = mp.Value('b', False)
 
 idleSecsObserved:Synchronized = mp.Value('i', 0)
