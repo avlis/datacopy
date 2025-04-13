@@ -3,7 +3,6 @@
 import traceback
 
 from timeit import default_timer as timer
-from time import sleep
 
 from typing import Optional
 
@@ -36,12 +35,15 @@ def readData(p_jobID:int, p_connection, p_cursor, p_fetchSize:int, p_query:str, 
 
             shared.eventQueue.put( (
                 shared.E_QUERY_START if p_finalDataReader else shared.E_KEYS_QUERY_START,
-                p_jobID,  None, None) )
+                p_jobID,  None, None)
+            )
+
             p_cursor.execute(p_query)
 
             shared.eventQueue.put( (
                 shared.E_QUERY_END if p_finalDataReader else shared.E_KEYS_QUERY_END,
-                p_jobID,  None, (timer() - tStart)) )
+                p_jobID,  None, (timer() - tStart))
+            )
         except Exception as e:
             errorOccurred = True
             setproctitle(f'{processTitlePrefix}(error@query) [{jobName}]')
@@ -53,6 +55,7 @@ def readData(p_jobID:int, p_connection, p_cursor, p_fetchSize:int, p_query:str, 
         if shared.Working.value and not errorOccurred:
             #first read outside the loop, to get the col description without penalising the main loop with ifs
             bData = False
+
             rStart = timer()
             try:
                 bData = p_cursor.fetchmany(p_fetchSize)
@@ -62,12 +65,19 @@ def readData(p_jobID:int, p_connection, p_cursor, p_fetchSize:int, p_query:str, 
                 logging.processError(p_e=e, p_message='reading1', p_jobID=p_jobID, p_dontSendToStats=True)
                 shared.eventQueue.put( (shared.E_READ_ERROR, p_jobID, None, (timer() - tStart)) )
 
-            if bData:
-                shared.eventQueue.put( (shared.E_READ_START, p_jobID, p_cursor.description, None ) )
-                shared.eventQueue.put( (shared.E_READ, p_jobID, len(bData), (timer()-rStart)) )
-
-            if not shared.TEST_QUERIES:
-                p_outQueue.put( bData, block = True)
+            if not errorOccurred:
+                shared.eventQueue.put( (
+                    shared.E_READ_START,
+                    p_jobID, p_cursor.description, p_fetchSize )
+                )
+                if not shared.TEST_QUERIES:
+                    p_outQueue.put( bData, block = True)
+                    shared.eventQueue.put( (shared.E_READ, p_jobID, len(bData), (timer()-rStart)) ) #type: ignore
+    else:
+        shared.eventQueue.put( (
+            shared.E_KEYS_READ_START,
+            p_jobID, p_cursor.description, p_fetchSize )
+        )
 
     if not shared.TEST_QUERIES:
         while shared.Working.value and not errorOccurred:
@@ -117,15 +127,10 @@ def readData(p_jobID:int, p_connection, p_cursor, p_fetchSize:int, p_query:str, 
     except Exception:
         pass
 
-    if shared.parallelReaders > 1:
-        #make sure that the next reader is started before we run the runningreaders to 0
-        # and the innerloop exits and we close writers
-        shared.eventQueue.put( (shared.E_NOOP, p_jobID, None, None) )
-        sleep(.15)
-
     shared.eventQueue.put( (
         shared.E_READ_END if p_finalDataReader else shared.E_KEYS_READ_END,
-        p_jobID, None, None) )
+        p_jobID, None, None)
+    )
 
     setproctitle(f'{processTitlePrefix}(flushing) [{jobName}]')
     logging.logPrint('Ended', logLevel.DEBUG, p_jobID=p_jobID)
@@ -162,7 +167,11 @@ def readDataCSV(p_jobID:int, p_conn, p_fetchSize:int, p_outQueue:Queue, p_finalD
         else:
             column_names:list[tuple[str]] = [(name,) for name in raw_column_names]
 
-        shared.eventQueue.put( (shared.E_READ_START, p_jobID, column_names, None ) )
+        shared.eventQueue.put( (
+            shared.E_READ_START if p_finalDataReader else shared.E_KEYS_READ_START,
+            p_jobID, column_names, p_fetchSize )
+        )
+
 
     except StopIteration as e:
         logging.processError(p_e=e, p_message='File does not have headers', p_jobID=p_jobID, p_stop=True)
@@ -189,14 +198,14 @@ def readDataCSV(p_jobID:int, p_conn, p_fetchSize:int, p_outQueue:Queue, p_finalD
 
                     if (i+1) % p_fetchSize == 0:
                         if shared.Working.value:
-                            p_outQueue.put(data_packet)
+                            p_outQueue.put(data_packet, block=True)
                             data_packet:list[tuple] = []
                             shared.eventQueue.put( (shared.E_READ, p_jobID, p_fetchSize, (timer()-tStart)) )
                         else:
                             break
                 remainingLines = len(data_packet)
                 if remainingLines>0:
-                    p_outQueue.put(data_packet)
+                    p_outQueue.put(data_packet, block=True)
                     shared.eventQueue.put( (shared.E_READ, p_jobID, remainingLines, (timer()-tStart)) )
             except Exception as e:
                 errorOccurred = True
@@ -210,14 +219,14 @@ def readDataCSV(p_jobID:int, p_conn, p_fetchSize:int, p_outQueue:Queue, p_finalD
                     # no filtering here
                     if (i+1) % p_fetchSize == 0:
                         if shared.Working.value:
-                            p_outQueue.put(data_packet)
+                            p_outQueue.put(data_packet, block=True)
                             data_packet:list[tuple] = []
                             shared.eventQueue.put( (shared.E_READ, p_jobID, p_fetchSize, (timer()-tStart)) )
                         else:
                             break
                 remainingLines = len(data_packet)
                 if remainingLines>0:
-                    p_outQueue.put(data_packet)
+                    p_outQueue.put(data_packet, block=True)
                     shared.eventQueue.put( (shared.E_READ, p_jobID, remainingLines, (timer()-tStart)) )
             except Exception as e:
                 errorOccurred = True
@@ -237,19 +246,21 @@ def readDataCSV(p_jobID:int, p_conn, p_fetchSize:int, p_outQueue:Queue, p_finalD
         except Exception:
             pass
 
-    if p_finalDataReader:
-        shared.eventQueue.put( (shared.E_READ_END, p_jobID, None, None) )
-    else:
-        shared.eventQueue.put( (shared.E_KEYS_READ_END, p_jobID, None, None) )
+    shared.eventQueue.put( (
+        shared.E_READ_END if p_finalDataReader else shared.E_KEYS_READ_END
+        , p_jobID, None, None)
+    )
+
     setproctitle(f'{processTitlePrefix}(flushing) [{jobName}]')
     logging.logPrint('Ended', logLevel.DEBUG, p_jobID=p_jobID)
 
-def readData2(p_jobID:int, p_connection2, p_cursor2, p_query2:str, p_fetchSize:int):
+
+def readData2(p_jobID:int, p_threadID:int, p_connection2, p_cursor2, p_query2:str, p_fetchSize:int):
     '''gets data from sources, sublooping for keys'''
 
     utils.block_signals()
 
-    logging.logPrint(f'Started, with cursor2=[{id(p_cursor2)}], fetchSize=[{p_fetchSize}]', logLevel.DEBUG, p_jobID=p_jobID)
+    logging.logPrint(f'Started, with cursor2=[{id(p_cursor2)}], fetchSize=[{p_fetchSize}]', logLevel.DEBUG, p_jobID=p_jobID, p_threadID=p_threadID)
 
     jobName = shared.getJobName(p_jobID)
 
@@ -257,7 +268,7 @@ def readData2(p_jobID:int, p_connection2, p_cursor2, p_query2:str, p_fetchSize:i
 
     errorOccurred = False
 
-    setproctitle(f'datacopy: readData2 (reading) [{jobName}]')
+    setproctitle(f'datacopy: readData2 (reading) [{jobName}]#{p_threadID}')
     while shared.Working.value and not errorOccurred:
         try:
             bData = shared.dataKeysQueue.get(timeout=1)
@@ -266,12 +277,12 @@ def readData2(p_jobID:int, p_connection2, p_cursor2, p_query2:str, p_fetchSize:i
                 break
             continue
 
-        logging.logPrint(f'[{len(bData)}] rows received from readData Level 1', logLevel.DEBUG, p_jobID=p_jobID)
+        logging.logPrint(f'[{len(bData)}] rows received from readData Level 1', logLevel.DEBUG, p_jobID=p_jobID, p_threadID=p_threadID)
         for keys in bData:
             if shared.Working.value == False or errorOccurred:
                 break
 
-            logging.logPrint(f'executing query 2 with keys=[{keys}]', logLevel.DEBUG, p_jobID=p_jobID)
+            logging.logPrint(f'executing query 2 with keys=[{keys}]', logLevel.DEBUG, p_jobID=p_jobID, p_threadID=p_threadID)
             qStart = timer()
             try:
                 shared.eventQueue.put( (shared.E_DETAIL_QUERY_START, p_jobID, None, None) )
@@ -279,7 +290,7 @@ def readData2(p_jobID:int, p_connection2, p_cursor2, p_query2:str, p_fetchSize:i
                 shared.eventQueue.put( (shared.E_DETAIL_QUERY_END, p_jobID, None, (timer() - qStart)) )
             except Exception as e:
                 errorOccurred = True
-                logging.processError(p_e=e, p_message=f'(execute2: keys=[{keys}], query2=[{p_query2}], conn2=[{p_connection2}]', p_jobID=p_jobID)
+                logging.processError(p_e=e, p_message=f'(execute2: keys=[{keys}], query2=[{p_query2}], conn2=[{p_connection2}]', p_jobID=p_jobID, p_threadID=p_threadID)
                 shared.eventQueue.put( (shared.E_QUERY_ERROR, p_jobID, None, (timer() - qStart)) )
 
             while shared.Working.value and not errorOccurred:
@@ -288,26 +299,26 @@ def readData2(p_jobID:int, p_connection2, p_cursor2, p_query2:str, p_fetchSize:i
                 try:
                     bData2 = p_cursor2.fetchmany(p_fetchSize)
                     if bColsNotSentYet:
-                        shared.eventQueue.put( (shared.E_READ_START, p_jobID, p_cursor2.description, None ) )
+                        shared.eventQueue.put( (shared.E_READ_START, p_jobID, p_cursor2.description, p_fetchSize ) )
                         if shared.TEST_QUERIES:
-                            logging.logPrint('Testing queries mode, stopping read.', logLevel.DEBUG, p_jobID=p_jobID)
+                            logging.logPrint('Testing queries mode, stopping read.', logLevel.DEBUG, p_jobID=p_jobID, p_threadID=p_threadID)
                             break
                         bColsNotSentYet = False
                 except Exception as e:
                     errorOccurred = True
                     logging.processError(p_e=e, p_jobID=p_jobID, p_dontSendToStats=True)
                     shared.eventQueue.put( (shared.E_READ_ERROR, p_jobID, None, (timer() - rStart)) )
+                    break
 
-                    break
                 if not bData2:
-                    logging.logPrint(f'query 2 returned no rows', logLevel.DEBUG, p_jobID=p_jobID)
+                    logging.logPrint(f'query 2 returned no rows', logLevel.DEBUG, p_jobID=p_jobID, p_threadID=p_threadID)
                     break
-                logging.logPrint(f'query 2 returned [{len(bData2)}] rows', logLevel.DEBUG, p_jobID=p_jobID)
+                logging.logPrint(f'query 2 returned [{len(bData2)}] rows', logLevel.DEBUG, p_jobID=p_jobID, p_threadID=p_threadID)
                 if len(bData2) > 0:
                     shared.eventQueue.put( (shared.E_READ, p_jobID, len(bData2), (timer()-rStart)) )
                     shared.dataQueue.put( bData2, block = True )
-            else:
-                continue
+                else:
+                    continue
 
             if shared.TEST_QUERIES:
                     break
@@ -321,9 +332,10 @@ def readData2(p_jobID:int, p_connection2, p_cursor2, p_query2:str, p_fetchSize:i
     except Exception:
         pass
 
-    shared.eventQueue.put( (shared.E_READ_END, p_jobID, None, None) )
-    setproctitle(f'datacopy: readData2 (flushing) [{jobName}]')
-    logging.logPrint('Ended', logLevel.DEBUG, p_jobID=p_jobID)
+    shared.eventQueue.put( (shared.E_READ_END, p_jobID, p_threadID, None) )
+    setproctitle(f'datacopy: readData2 (flushing) [{jobName}]#{p_threadID}')
+    logging.logPrint('Ended', logLevel.DEBUG, p_jobID=p_jobID, p_threadID=p_threadID)
+
 
 def writeData(p_jobID:int, p_threadID:int, p_connection, p_cursor, p_iQuery:str = ''):
     '''writes data to destinations'''
@@ -342,7 +354,7 @@ def writeData(p_jobID:int, p_threadID:int, p_connection, p_cursor, p_iQuery:str 
         except queueEmpty:
             if shared.stopWhenEmpty.value:
                 logging.logPrint('end of data detected', logLevel.DEBUG, p_jobID=p_jobID, p_threadID=p_threadID)
-                setproctitle(f'datacopy: writeData [{jobName}], stopping')
+                setproctitle(f'datacopy: writeData [{jobName}] stopping')
                 break
             continue
         iStart = timer()

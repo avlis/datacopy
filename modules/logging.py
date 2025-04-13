@@ -12,7 +12,7 @@ from timeit import default_timer as timer
 
 import csv
 from enum import Enum
-from typing import Optional
+from typing import Optional,Callable
 
 import modules.shared as shared
 import modules.utils as utils
@@ -123,10 +123,10 @@ def processError(p_e:Optional[Exception]=None, p_stack:Optional[str]=None, p_mes
         shared.ErrorOccurred.value = True
 
     if p_stop is not None and p_stop:
+        with shared.stopWhenKeysEmpty.get_lock():
+            shared.stopWhenKeysEmpty.value = True
         with shared.stopWhenEmpty.get_lock():
             shared.stopWhenEmpty.value = True
-        with shared.stopWhenKeysEmpty.get_lock():
-            shared.stopWhenKeysEmpty.value = False
 
         with shared.Working.get_lock():
             shared.Working.value = False
@@ -297,13 +297,13 @@ def printSharedVariables(fromWhere:str):
 
     logPrint(f'--- end of dumping shared variables', logLevel.DEBUG)
 
-def init_json_file(p_file, date_function=shared.timestamp_readable) -> None:
+def init_json_file(p_file, date_function:Callable) -> None:
     if isinstance(date_function(),str):
         print(f'[{{"start":"{date_function()}"}},', file=p_file, flush=True)
     else:
         print(f'[{{"start":{date_function()}}},', file=p_file, flush=True)
 
-def term_json_file(p_file, date_function=shared.timestamp_readable) -> None:
+def term_json_file(p_file, date_function:Callable) -> None:
     if isinstance(date_function(),str):
         print(f'{{"stop":"{date_function()}"}}]', file=p_file, flush=True)
     else:

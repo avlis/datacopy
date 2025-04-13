@@ -176,7 +176,7 @@ def Main():
 
     logging.closeLog()
 
-    print('closeLog: making sure log thread is terminated...', file=sys.stderr, flush=True) #DISABLE_IN_PTOD
+    print('closeLog: making sure log thread is terminated...', file=sys.stderr, flush=True) #DISABLE_IN_PROD
     try:
         logging.logThread.join(timeout=1)
         logging.logThread.terminate()

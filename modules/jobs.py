@@ -58,13 +58,13 @@ class Job:
         if len(self.key_query) > 0 and self.key_query[0] == '@':
                 self.key_query = _readSqlFile(self.key_query[1:])
 
-        if 'pre_query_src' in thisJobData:
-            self.preQuerySrc = thisJobData['pre_query_src']
+        if 'src_pre_query' in thisJobData:
+            self.preQuerySrc = thisJobData['src_pre_query']
             if len(self.preQuerySrc) > 0 and self.preQuerySrc[0]  == '@':
                 self.preQuerySrc = _readSqlFile(self.preQuerySrc[1:])
 
-        if 'pre_query_dst' in thisJobData:
-            self.preQueryDst = thisJobData['pre_query_dst']
+        if 'dst_pre_query' in thisJobData:
+            self.preQueryDst = thisJobData['dst_pre_query']
             if len(self.preQueryDst) > 0 and self.preQueryDst[0]  == '@':
                 self.preQueryDst = _readSqlFile(self.preQueryDst[1:])
 
@@ -234,17 +234,13 @@ def preCheck(raw_jobs:dict[int, dict[str, Any]]) -> dict[int, dict[str, Any]]:
 
         if 'key_source' in aJob:
             key_source = aJob['key_source']
-            key_sourceDriver =connections.getConnectionParameter(key_source, 'driver')
         else:
             key_source = ''
-            key_sourceDriver = ''
 
         if 'append_source' in aJob:
             apDest = aJob['append_source']
-            apDestDriver = connections.getConnectionParameter(apDest, 'driver')
         else:
             apDest = ''
-            apDestDriver = ''
 
         if 'key_query' in aJob:
             key_query = aJob['key_query']
@@ -297,26 +293,26 @@ def preCheck(raw_jobs:dict[int, dict[str, Any]]) -> dict[int, dict[str, Any]]:
                 logging.processError(p_message=f'key_query specified, but no key_source specified on connections. giving up.', p_stop=True, p_exitCode=4)
                 return {}
 
-        if 'pre_query_src' in aJob:
-            preQuerySrc = aJob['pre_query_src']
+        if 'src_pre_query' in aJob:
+            preQuerySrc = aJob['src_pre_query']
             if len(preQuerySrc) > 0 and preQuerySrc[0] == '@':
                 if not _preCheckSqlFile(preQuerySrc[1:], 'pre-query on source'): return {}
 
-        if 'pre_query_key' in aJob:
-            preQuerySrc2 = aJob['pre_query_key']
+        if 'key_pre_query' in aJob:
+            preQuerySrc2 = aJob['key_pre_query']
             if len(preQuerySrc2) > 0 and preQuerySrc2[0] == '@':
-                if not _preCheckSqlFile(preQuerySrc2[1:], 'pre_query_key on key_source'): return {}
+                if not _preCheckSqlFile(preQuerySrc2[1:], 'key_pre_query on key_source'): return {}
 
             if len(key_source) > 0:
                 if key_source not in shared.connections:
-                    logging.processError(p_message=f'pre_query_key specified, but key_source [{key_source}] not declared on connections. giving up.', p_stop=True, p_exitCode=4)
+                    logging.processError(p_message=f'key_pre_query specified, but key_source [{key_source}] not declared on connections. giving up.', p_stop=True, p_exitCode=4)
                     return {}
             else:
-                logging.processError(p_message=f'pre_query_key specified, but no key_source specified on connections. giving up.', p_stop=True, p_exitCode=4)
+                logging.processError(p_message=f'key_pre_query specified, but no key_source specified on connections. giving up.', p_stop=True, p_exitCode=4)
                 return {}
 
-        if 'pre_query_dst' in aJob:
-            preQueryDst = aJob['pre_query_dst']
+        if 'dst_pre_query' in aJob:
+            preQueryDst = aJob['dst_pre_query']
             if len(preQueryDst) >0 and preQueryDst[0] == '@':
                 if not _preCheckSqlFile(preQueryDst[1:], 'pre-query on destination'): return {}
 

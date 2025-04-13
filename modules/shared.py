@@ -9,7 +9,7 @@ import multiprocessing as mp
 from multiprocessing.sharedctypes import Synchronized
 
 from datetime import datetime
-from time import time
+import zoneinfo
 
 from typing import Callable, Any
 
@@ -47,6 +47,7 @@ E_BOOT_READER = E_BOOT + E_READ
 E_READ_START = E_READ + E_START
 E_READ_ERROR = E_READ + E_ERROR
 E_READ_END = E_READ + E_END
+E_KEYS_READ_START = E_KEYS + E_START
 E_KEYS_READ_END = E_KEYS + E_READ_END
 
 E_WRITE_START = E_WRITE + E_START
@@ -63,15 +64,32 @@ for name, value in __local_vars:
 
 #### timestamp utilities ##########################################################################
 
-def timestamp_compact() -> str:
-    return datetime.now().strftime('%Y%m%d%H%M%S.%f')
 
-def timestamp_readable() -> str:
+timezone:str = os.getenv('TZ', "UTC")
+timezoneinfo = zoneinfo.ZoneInfo(timezone)
+
+def timestamp_short() -> str:
+    return datetime.now(timezoneinfo).strftime('%H%M%S.%f')
+
+def timestamp_compact() -> str:
+    return datetime.now(timezoneinfo).strftime('%Y%m%d%H%M%S.%f')
+
+def timestamp_local() -> str:
     return str(datetime.now())
 
 def timestamp_unix() -> float:
-    return time()
+    return datetime.now(timezoneinfo).timestamp()
 
+def timestamp_iso8601() -> str:
+    return datetime.now(timezoneinfo).isoformat()
+
+timestamp_functions_map:dict[str, Callable] = {
+    'short':    timestamp_short,
+    'compact':  timestamp_compact,
+    'readable': timestamp_local,
+    'unix':     timestamp_unix,
+    'iso8601':  timestamp_iso8601
+}
 # Job Name Calculator, used in multiple places
 
 def getJobName(p_jobID:int) -> str:
@@ -116,39 +134,23 @@ dumpFileSeparator:str = os.getenv('DUMPFILE_SEP','|')
 
 executionID:str = os.getenv('EXECUTION_ID',datetime.now().strftime('%Y%m%d%H%M%S.%f'))
 
-logTimestampFormat:str = os.getenv('LOG_TIMESTAMP_FORMAT','date')
-logTimestampFunction:Callable[[], str | float] = None #type: ignore
+logTimestampFormat:str = os.getenv('LOG_TIMESTAMP_FORMAT','')
+logTimestampFunction:Callable[[], str | float] = timestamp_local
 
-match logTimestampFormat:
-    case 'linux':
-        logTimestampFunction=timestamp_unix
-    case 'compact':
-        logTimestampFunction=timestamp_compact
-    case _:
-        logTimestampFunction=timestamp_readable
+if logTimestampFormat in timestamp_functions_map:
+    logTimestampFunction = timestamp_functions_map[logTimestampFormat]
 
-statsTimestampFormat:str = os.getenv('STATS_TIMESTAMP_FORMAT','date')
-statsTimestampFunction:Callable[[], str | float] = None #type: ignore
+statsTimestampFormat:str = os.getenv('STATS_TIMESTAMP_FORMAT','')
+statsTimestampFunction:Callable[[], str | float] = timestamp_iso8601
 
-match statsTimestampFormat:
-    case 'linux':
-        statsTimestampFunction=timestamp_unix
-    case 'compact':
-        statsTimestampFunction=timestamp_compact
-    case _:
-        statsTimestampFunction=timestamp_readable
+if  statsTimestampFormat in timestamp_functions_map:
+    statsTimestampFunction=timestamp_functions_map[statsTimestampFormat]
 
-memoryTimestampFormat:str = os.getenv('MEMORY_STATS_TIMESTAMP_FORMAT','date')
-memoryTimestampFunction:Callable[[], str | float] = None # type: ignore
+memoryTimestampFormat:str = os.getenv('MEMORY_TIMESTAMP_FORMAT','')
+memoryTimestampFunction:Callable[[], str | float] = timestamp_short
 
-match memoryTimestampFormat:
-    case 'linux':
-        memoryTimestampFunction=timestamp_unix
-    case 'compact':
-        memoryTimestampFunction=timestamp_compact
-    case _:
-        memoryTimestampFunction=timestamp_readable
-
+if  memoryTimestampFormat in timestamp_functions_map:
+    memoryTimestampFunction=timestamp_functions_map[memoryTimestampFormat]
 
 STATS_IN_JSON:bool = bool(os.getenv('STATS_IN_JSON','no') == 'yes')
 statsFormat:str
@@ -161,11 +163,10 @@ else:
     statsFormat:str = '{0}\t{1}\t{2}\t{3}\t{4}\t{5:.2f}\t{6}'
 
 parallelReaders:int = int(os.getenv('PARALLEL_READERS','1'))
-parallelReadersLaunchInterval:float = float(os.getenv('PARALLEL_READERS_LAUNCH_INTERVAL','0.1'))
+parallelReadersLaunchInterval:float = float(os.getenv('PARALLEL_READERS_LAUNCH_INTERVAL','0.2'))
 
 idleTimeoutSecs:int = int(os.getenv('IDLE_TIMEOUT_SECS','0'))
 connectionTimeoutSecs:int = int(os.getenv('CONNECTION_TIMEOUT_SECS','22'))
-
 
 COLLECT_MEMORY_STATS:bool = bool(os.getenv('COLLECT_MEMORY_STATS','no') == 'yes')
 collectMemoryStatsIntervalSecs:float = float(os.getenv('COLLECT_MEMORY_STATS_INTERVAL_SECS','1'))
@@ -220,8 +221,7 @@ logQueue:mp.Queue = mp.Queue()
 '''message format: tuple(logLevel:Enum, message, jobID:int, jobName:str, where:str)'''
 
 Working:Synchronized = mp.Value('b', True)
-runningReaders:Synchronized = mp.Value('i', 0)
-runningWriters:Synchronized = mp.Value('i', 0)
+
 ErrorOccurred:Synchronized =  mp.Value('b',False)
 stopWhenEmpty:Synchronized = mp.Value('b', False)
 stopWhenKeysEmpty:Synchronized = mp.Value('b', False)
