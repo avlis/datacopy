@@ -161,7 +161,7 @@ def Main():
     logging.logPrint(f'making sure all write threads are terminated [{len(shared.writeP)}]...', logLevel.DEBUG)
     for i in shared.writeP:
         try:
-            shared.readP[i].join(timeout=1)
+            shared.writeP[i].join(timeout=1)
             shared.writeP[i].terminate()
             shared.writeP[i].join(timeout=1)
         except Exception as error:

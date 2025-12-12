@@ -164,6 +164,7 @@ else:
 
 parallelReaders:int = int(os.getenv('PARALLEL_READERS','1'))
 parallelReadersLaunchInterval:float = float(os.getenv('PARALLEL_READERS_LAUNCH_INTERVAL','0.2'))
+parallelProcessesNiceness:int = int(os.getenv('PARALLEL_PROCESSES_NICENESS', 16))
 
 idleTimeoutSecs:int = int(os.getenv('IDLE_TIMEOUT_SECS','0'))
 connectionTimeoutSecs:int = int(os.getenv('CONNECTION_TIMEOUT_SECS','22'))

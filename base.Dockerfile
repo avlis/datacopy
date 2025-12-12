@@ -1,6 +1,6 @@
-ARG PYTHON_VER=3.13
+ARG PYTHON_VER=3.14
 ARG BASEIMAGE=python:${PYTHON_VER}-slim
-ARG base_version="base-20250307-001-pyhton${PYTHON_VER}"
+ARG base_version="base-20251212-001"
 FROM ${BASEIMAGE} AS builder
 
 LABEL base_version=${base_version}
@@ -39,17 +39,15 @@ ENV TMPDIR=/dev/shm
 #ARG oracle_dl_folder=2116000
 #ARG oracle_opt_folder=21_16
 #ARG oracle_version=21.16.0.0.0dbru
-ARG oracle_dl_folder=2370000
-ARG oracle_opt_folder=23_7
-ARG oracle_version=23.7.0.25.01
+ARG oracle_dl_folder=2326000
+ARG oracle_opt_folder=23_26
+ARG oracle_version=23.26.0.0.0
 
-
-RUN echo "#!/bin/bash\nalias ll='ls -lah'\n\nexport BASE_VERSION=${BASE_VERSION}" > /etc/profile.d/base.sh ; chmod +x /etc/profile.d/base.sh
+RUN echo "#!/bin/bash\nalias ll='ls -lah'\n\nexport BASE_VERSION=${BASE_VERSION}-$(python3 --version 2>&1 | cut -d ' ' -f 2)" > /etc/profile.d/base.sh ; chmod +x /etc/profile.d/base.sh
 
 # BASE packages
 RUN apt-get update \
-	&& apt-get -y dist-upgrade \
-	&& DEBIAN_FRONTEND=noninteractive apt-get -y install curl bash gnupg unzip gpg procps lsb-release mariadb-client postgresql-client libaio1 # libkrb5-3 krb5-user #nano screen htop iftop tcpdump net-tools less iputils-ping
+	&& DEBIAN_FRONTEND=noninteractive apt-get -y install curl bash gnupg unzip gpg procps lsb-release mariadb-client postgresql-client libaio1t64 # libkrb5-3 krb5-user #nano screen htop iftop tcpdump net-tools less iputils-ping
 
 # Microsoft stuff
 RUN curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
@@ -67,6 +65,8 @@ RUN echo "https://download.oracle.com/otn_software/linux/instantclient/${oracle_
 RUN cd /opt && curl https://download.oracle.com/otn_software/linux/instantclient/${oracle_dl_folder}/instantclient-basiclite-linux.x64-${oracle_version}.zip > /dev/shm/oic.zip && unzip -o /dev/shm/oic.zip
 RUN cd /opt && curl https://download.oracle.com/otn_software/linux/instantclient/${oracle_dl_folder}/instantclient-sqlplus-linux.x64-${oracle_version}.zip > /dev/shm/osp.zip && unzip -o /dev/shm/osp.zip
 RUN ln -s /opt/instantclient_${oracle_opt_folder}/sqlplus /usr/local/bin
+#Fix for time_t support, as currently there are no oracle drivers linked to 1t64
+RUN ln -s /usr/lib/x86_64-linux-gnu/libaio.so.1t64 /usr/lib/x86_64-linux-gnu/libaio.so.1
 RUN echo "export LD_LIBRARY_PATH=/opt/instantclient_${oracle_opt_folder}" >> /etc/profile.d/base.sh
 
 # MariaDB:
@@ -86,7 +86,7 @@ RUN pip3 install -r pip-packages-whl.txt
 # CLEANUP
 RUN rm -f pip-packages-*.txt; \
 	pip3 cache purge; \
- 	apt-get -y purge g++ python3-dev libpq-dev libmariadb-dev; \
+	apt-get -y purge g++ python3-dev libpq-dev libmariadb-dev; \
 	apt-get -y autoremove; \
 	apt-get autoclean; \
 	apt-get clean

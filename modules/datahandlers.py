@@ -1,5 +1,5 @@
 '''readers and writers'''
-
+import os
 import traceback
 
 from timeit import default_timer as timer
@@ -16,8 +16,16 @@ import modules.utils as utils
 import modules.logging as logging
 from modules.logging import logLevel as logLevel
 
+def playNice():
+    try:
+        os.setpriority(os.PRIO_PROCESS, 0, shared.parallelProcessesNiceness)
+    except:
+        pass
+
 def readData(p_jobID:int, p_connection, p_cursor, p_fetchSize:int, p_query:str, p_outQueue:Queue, p_finalDataReader:bool=True):
     '''gets data from sources'''
+
+    playNice()
 
     utils.block_signals()
 
@@ -137,6 +145,7 @@ def readData(p_jobID:int, p_connection, p_cursor, p_fetchSize:int, p_query:str, 
 
 def readDataCSV(p_jobID:int, p_conn, p_fetchSize:int, p_outQueue:Queue, p_finalDataReader:bool=True, p_columns:Optional[list]=None):
 
+    playNice()
 
     jobName = shared.getJobName(p_jobID)
     logging.logPrint(f'Started, columns requested=[{p_columns}], fetchSize=[{p_fetchSize}], finalReader={p_finalDataReader}', logLevel.DEBUG, p_jobID=p_jobID)
@@ -254,9 +263,10 @@ def readDataCSV(p_jobID:int, p_conn, p_fetchSize:int, p_outQueue:Queue, p_finalD
     setproctitle(f'{processTitlePrefix}(flushing) [{jobName}]')
     logging.logPrint('Ended', logLevel.DEBUG, p_jobID=p_jobID)
 
-
 def readData2(p_jobID:int, p_threadID:int, p_connection2, p_cursor2, p_query2:str, p_fetchSize:int):
     '''gets data from sources, sublooping for keys'''
+
+    playNice()
 
     utils.block_signals()
 
@@ -340,6 +350,8 @@ def readData2(p_jobID:int, p_threadID:int, p_connection2, p_cursor2, p_query2:st
 def writeData(p_jobID:int, p_threadID:int, p_connection, p_cursor, p_iQuery:str = ''):
     '''writes data to destinations'''
 
+    playNice()
+
     utils.block_signals()
 
     jobName = shared.getJobName(p_jobID)
@@ -404,6 +416,8 @@ def writeData(p_jobID:int, p_threadID:int, p_connection, p_cursor, p_iQuery:str 
 
 def writeDataCSV(p_jobID:int, p_threadID:int, p_conn, p_Header:str, p_encodeSpecial:bool = False):
     '''write data to csv file'''
+
+    playNice()
 
     utils.block_signals()
 

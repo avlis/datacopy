@@ -12,7 +12,7 @@ if [ -z "${no_proxy}" ]; then
 	PROXY_ARGS="${PROXY_ARGS} --build-arg NO_PROXY=${NO_PROXY}"
 fi
 
-BASEIMAGE=${BASEIMAGE:-python:3.13-slim}
+BASEIMAGE=${BASEIMAGE:-python:3.14-slim}
 
 BASENAME=${BASENAME:-datacopy}
 FINALNAME=${FINALNAME:-datacopy}
@@ -20,11 +20,13 @@ FINALNAME=${FINALNAME:-datacopy}
 BASEDOCKERFILE=${BASEDOCKERFILE:-base.Dockerfile}
 FINALDOCKERFILE=${FINALDOCKERFILE:-Dockerfile}
 
+VERSION=$(grep 'ARG version' ${FINALDOCKERFILE} | cut -d= -f2 | tr -d '"')
+
 if [ ! -z "${EXTRAVERSION}" ]; then
 	EXTRAVERSION="-${EXTRAVERSION}"
 fi
 
-if [ -z "${SKIP_BUILD_BASE}" ]; then
+if [ "${SKIP_BUILD_BASE}" != "yes" ]; then
 	echo "*** cleaning up BASE [${BASENAME}] images"
 	docker rm baseexport 2>&1 >/dev/null
 	docker rmi ${BASENAME}:build ${BASENAME}:flat
@@ -46,9 +48,11 @@ if [ -z "${SKIP_BUILD_BASE}" ]; then
 		echo "build BASE failed!"
 		exit 1
 	fi
+else
+	echo "*** skipping build BASE ***"
 fi
 
-echo "*** building ${FINALNAME}${EXTRAVERSION}:latest"
+echo "*** building ${FINALNAME}${EXTRAVERSION}:${VERSION}"
 docker rmi ${FINALNAME}${EXTRAVERSION}:latest
 
 if [ ! -z "${EXTRAVERSION}" ]; then
@@ -58,4 +62,4 @@ if [ ! -z "${BASENAME}" ]; then
 	BARGS="${BARGS} --build-arg BASENAME=${BASENAME}"
 fi
 
-docker build -t ${FINALNAME}${EXTRAVERSION}:latest -f ${FINALDOCKERFILE} . ${BARGS} ${PROXY_ARGS} "$@"
+docker build -t ${FINALNAME}${EXTRAVERSION}:latest -t ${VERSION} -f ${FINALDOCKERFILE} . ${BARGS} ${PROXY_ARGS} "$@"
