@@ -1,7 +1,14 @@
+# make sure you run docker build with --shm-size=2G or similar
+# --- Global Scope ---
 ARG PYTHON_VER=3.14
 ARG BASEIMAGE=python:${PYTHON_VER}-slim
-ARG base_version="base-20251212-001"
+ARG base_version="base-20251218-001"
+
+
+################ STAGE 1 (builder) ################
 FROM ${BASEIMAGE} AS builder
+ARG PYTHON_VER
+ARG base_version
 
 LABEL base_version=${base_version}
 
@@ -21,7 +28,6 @@ RUN pip3 install -r pip-packages-need-compiling.txt
 
 
 ################ STAGE 2  ################
-
 FROM ${BASEIMAGE}
 
 ARG PYTHON_VER
@@ -33,7 +39,6 @@ ENV BASE_VERSION=${base_version}
 
 COPY --from=builder /usr/local/lib/python${PYTHON_VER}/site-packages /usr/local/lib/python${PYTHON_VER}/site-packages
 
-#make sure you run docker build with --shm-size=2G or similar
 ENV TMPDIR=/dev/shm
 
 #ARG oracle_dl_folder=2116000
@@ -60,13 +65,18 @@ RUN sed -i 's/SECLEVEL=2/SECLEVEL=1/g;s/TLSv1.2/TLSv1/g' /etc/ssl/openssl.cnf &&
 
 # ORACLE: how to check for newer oracle versions: https://www.oracle.com/database/technologies/instant-client/linux-x86-64-downloads.html
 RUN echo "trying to download oracle files from:"
-RUN	echo "https://download.oracle.com/otn_software/linux/instantclient/${oracle_dl_folder}/instantclient-basiclite-linux.x64-${oracle_version}.zip"
-RUN echo "https://download.oracle.com/otn_software/linux/instantclient/${oracle_dl_folder}/instantclient-sqlplus-linux.x64-${oracle_version}.zip"
-RUN cd /opt && curl https://download.oracle.com/otn_software/linux/instantclient/${oracle_dl_folder}/instantclient-basiclite-linux.x64-${oracle_version}.zip > /dev/shm/oic.zip && unzip -o /dev/shm/oic.zip
-RUN cd /opt && curl https://download.oracle.com/otn_software/linux/instantclient/${oracle_dl_folder}/instantclient-sqlplus-linux.x64-${oracle_version}.zip > /dev/shm/osp.zip && unzip -o /dev/shm/osp.zip
+RUN	echo "https://download.oracle.com/otn_software/linux/instantclient/${oracle_dl_folder}/instantclient-basiclite-linux.$(dpkg --print-architecture)-${oracle_version}.zip"
+RUN echo "https://download.oracle.com/otn_software/linux/instantclient/${oracle_dl_folder}/instantclient-sqlplus-linux.$(dpkg --print-architecture)-${oracle_version}.zip"
+RUN cd /opt && curl https://download.oracle.com/otn_software/linux/instantclient/${oracle_dl_folder}/instantclient-basiclite-linux.$(dpkg --print-architecture)-${oracle_version}.zip > /dev/shm/oic.zip && unzip -o /dev/shm/oic.zip
+RUN cd /opt && curl https://download.oracle.com/otn_software/linux/instantclient/${oracle_dl_folder}/instantclient-sqlplus-linux.$(dpkg --print-architecture)-${oracle_version}.zip > /dev/shm/osp.zip && unzip -o /dev/shm/osp.zip
 RUN ln -s /opt/instantclient_${oracle_opt_folder}/sqlplus /usr/local/bin
 #Fix for time_t support, as currently there are no oracle drivers linked to 1t64
-RUN ln -s /usr/lib/x86_64-linux-gnu/libaio.so.1t64 /usr/lib/x86_64-linux-gnu/libaio.so.1
+RUN ARCH=$(dpkg --print-architecture) && \
+    if [ "$ARCH" = "arm64" ]; then GTRIPLE="aarch64"; \
+    elif [ "$ARCH" = "amd64" ]; then GTRIPLE="x86_64"; \
+    else GTRIPLE="$ARCH"; fi && \
+    LIB_DIR="/usr/lib/${GTRIPLE}-linux-gnu" && \
+    ln -s "${LIB_DIR}/libaio.so.1t64" "${LIB_DIR}/libaio.so.1"
 RUN echo "export LD_LIBRARY_PATH=/opt/instantclient_${oracle_opt_folder}" >> /etc/profile.d/base.sh
 
 # MariaDB:

@@ -18,9 +18,9 @@ BASENAME=${BASENAME:-datacopy}
 FINALNAME=${FINALNAME:-datacopy}
 
 BASEDOCKERFILE=${BASEDOCKERFILE:-base.Dockerfile}
-FINALDOCKERFILE=${FINALDOCKERFILE:-Dockerfile}
+FINALDOCKERFILE=${FINALDOCKERFILE:-justcode.Dockerfile}
 
-VERSION=$(grep 'ARG version' ${FINALDOCKERFILE} | cut -d= -f2 | tr -d '"')
+VERSION=$(grep 'ARG version=' ${FINALDOCKERFILE} | cut -d= -f2 | tr -d '"')
 
 if [ ! -z "${EXTRAVERSION}" ]; then
 	EXTRAVERSION="-${EXTRAVERSION}"
