@@ -65,10 +65,10 @@ RUN sed -i 's/SECLEVEL=2/SECLEVEL=1/g;s/TLSv1.2/TLSv1/g' /etc/ssl/openssl.cnf &&
 
 # ORACLE: how to check for newer oracle versions: https://www.oracle.com/database/technologies/instant-client/linux-x86-64-downloads.html
 RUN echo "trying to download oracle files from:"
-RUN	echo "https://download.oracle.com/otn_software/linux/instantclient/${oracle_dl_folder}/instantclient-basiclite-linux.$(dpkg --print-architecture)-${oracle_version}.zip"
-RUN echo "https://download.oracle.com/otn_software/linux/instantclient/${oracle_dl_folder}/instantclient-sqlplus-linux.$(dpkg --print-architecture)-${oracle_version}.zip"
-RUN cd /opt && curl https://download.oracle.com/otn_software/linux/instantclient/${oracle_dl_folder}/instantclient-basiclite-linux.$(dpkg --print-architecture)-${oracle_version}.zip > /dev/shm/oic.zip && unzip -o /dev/shm/oic.zip
-RUN cd /opt && curl https://download.oracle.com/otn_software/linux/instantclient/${oracle_dl_folder}/instantclient-sqlplus-linux.$(dpkg --print-architecture)-${oracle_version}.zip > /dev/shm/osp.zip && unzip -o /dev/shm/osp.zip
+RUN	echo "https://download.oracle.com/otn_software/linux/instantclient/${oracle_dl_folder}/instantclient-basiclite-linux.$([ "$(dpkg --print-architecture)" == "arm64" ] && echo arm64 || echo x64 )-${oracle_version}.zip"
+RUN echo "https://download.oracle.com/otn_software/linux/instantclient/${oracle_dl_folder}/instantclient-sqlplus-linux.$([ "$(dpkg --print-architecture)" == "arm64" ] && echo arm64 || echo x64 )-${oracle_version}.zip"
+RUN cd /opt && curl https://download.oracle.com/otn_software/linux/instantclient/${oracle_dl_folder}/instantclient-basiclite-linux.$([ "$(dpkg --print-architecture)" == "arm64" ] && echo arm64 || echo x64 )-${oracle_version}.zip > /dev/shm/oic.zip && unzip -o /dev/shm/oic.zip
+RUN cd /opt && curl https://download.oracle.com/otn_software/linux/instantclient/${oracle_dl_folder}/instantclient-sqlplus-linux.$([ "$(dpkg --print-architecture)" == "arm64" ] && echo arm64 || echo x64 )-${oracle_version}.zip > /dev/shm/osp.zip && unzip -o /dev/shm/osp.zip
 RUN ln -s /opt/instantclient_${oracle_opt_folder}/sqlplus /usr/local/bin
 #Fix for time_t support, as currently there are no oracle drivers linked to 1t64
 RUN ARCH=$(dpkg --print-architecture) && \
