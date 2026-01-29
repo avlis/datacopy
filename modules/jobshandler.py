@@ -97,7 +97,11 @@ def jobManager():
                     siObjSep = connections.getConnectionParameter(thisJob.dest, 'insert_object_delimiter')
                     match thisJob.mode.upper():
                         case 'T' | 'D':
-                            cConn = connections.initConnections(thisJob.dest, False, 1, thisJob.table, 'w')[0]
+                            newConns = connections.initConnections(thisJob.dest, False, 1, thisJob.table, 'w')
+                            if newConns is not None:
+                                cConn = newConns[0]
+                            else:
+                                break
                             cCleanData = cConn.cursor()
                             match thisJob.mode.upper():
                                 case 'T':
@@ -135,7 +139,12 @@ def jobManager():
                             else:
                                 getMaxDest = thisJob.getMaxDest
 
-                            cConn = connections.initConnections(getMaxDest, False, 1, thisJob.table, 'w')[0]
+                            newConns = connections.initConnections(getMaxDest, False, 1, thisJob.table, 'w')
+                            if newConns is not None:
+                                cConn = newConns[0]
+                            else:
+                                break
+
                             cGetMaxID = cConn.cursor()
 
                             logging.logPrint(f'figuring out max value for [{thisJob.appendKeyColumn}] on [{thisJob.getMaxDest}] with [{thisJob.getMaxQuery}]', p_jobID=jobID)
@@ -235,14 +244,26 @@ def jobManager():
                                 r1SourceDriver:str = thisJob.key_sourceDriver
                                 r1FetchSize:int = thisJob.key_fetchSize
                                 if thisJob.key_sourceDriver == 'csv':
-                                    shared.GetConn[r1JobID] = connections.initConnections(thisJob.key_source, True, 1, p_tableName=thisJob.key_query, p_mode='r')[0]
+                                    newConns = connections.initConnections(thisJob.key_source, True, 1, p_tableName=thisJob.key_query, p_mode='r')
+                                    if newConns is not None:
+                                        shared.GetConn[r1JobID] = newConns[0]
+                                    else:
+                                        break
                                 else:
-                                    shared.GetConn[r1JobID] = connections.initConnections(thisJob.key_source, True, 1)[0]
+                                    newConns = connections.initConnections(thisJob.key_source, True, 1)
+                                    if newConns is not None:
+                                        shared.GetConn[r1JobID] = newConns[0]
+                                    else:
+                                        break
                                     shared.GetData[r1JobID] = connections.initCursor(p_conn=shared.GetConn[r1JobID], p_jobID=eJobID, p_source=thisJob.key_source, p_fetchSize=thisJob.fetchSize)
 
                                 for i in range(1, shared.parallelReaders+1):
                                     thisThreadID=eJobID*1000+i
-                                    shared.GetConn[thisThreadID] = connections.initConnections(thisJob.source, True, 1)[0]
+                                    newConns = connections.initConnections(thisJob.source, True, 1)
+                                    if newConns is not None:
+                                        shared.GetConn[thisThreadID] = newConns[0]
+                                    else:
+                                        break
                                     shared.GetData[thisThreadID] = connections.initCursor(p_conn=shared.GetConn[thisThreadID], p_jobID=eJobID, p_source=thisJob.source, p_fetchSize=thisJob.fetchSize)
 
                                     r2=mp.Process(target=datahandlers.readData2, args = (eJobID, thisThreadID, shared.GetConn[thisThreadID], shared.GetData[thisThreadID], thisJob.query, thisJob.fetchSize))
@@ -260,7 +281,11 @@ def jobManager():
                                 r1Query:str=thisJob.query
                                 r1SourceDriver:str = thisJob.key_source
                                 r1FetchSize=thisJob.fetchSize
-                                shared.GetConn[r1JobID] = connections.initConnections(p_name=thisJob.source, p_readOnly=True, p_qtd=1, p_tableName=thisJob.query, p_mode='r')[0]
+                                newConns =  connections.initConnections(p_name=thisJob.source, p_readOnly=True, p_qtd=1, p_tableName=thisJob.query, p_mode='r')
+                                if newConns is not None:
+                                    shared.GetConn[r1JobID] = newConns[0]
+                                else:
+                                    break
                                 outQueue:mp.Queue = shared.dataQueue
                                 r1FinalDataReader = True
 
@@ -332,7 +357,11 @@ def jobManager():
                                         workingCols = recs
                                     case '@d':
                                         # from destination:
-                                        cConn = connections.initConnections(thisJob.dest, False, 1, thisJob.table, 'r')[0]
+                                        newConns = connections.initConnections(thisJob.dest, False, 1, thisJob.table, 'r')
+                                        if newConns is not None:
+                                            cConn = newConns[0]
+                                        else:
+                                            break
                                         tdCursor = cConn.cursor()
                                         siObjSep = connections.getConnectionParameter(thisJob.dest, 'insert_object_delimiter')
                                         fetchColsFromDestSql=f'SELECT * FROM {siObjSep}{thisJob.table}{siObjSep}  WHERE 1=0'

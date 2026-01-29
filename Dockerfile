@@ -2,8 +2,8 @@
 # --- Global Scope ---
 ARG PYTHON_VER=3.14
 ARG BASEIMAGE=python:${PYTHON_VER}-slim
-ARG base_version="base-20251218-001"
-ARG version="20251212-001"
+ARG base_version="base-20260128-001"
+ARG version="20260128-001"
 
 ################ STAGE 1 (builder) ################
 FROM ${BASEIMAGE} AS builder
@@ -44,9 +44,9 @@ ENV TMPDIR=/dev/shm
 #ARG oracle_dl_folder=2116000
 #ARG oracle_opt_folder=21_16
 #ARG oracle_version=21.16.0.0.0dbru
-ARG oracle_dl_folder=2326000
+ARG oracle_dl_folder=2326100
 ARG oracle_opt_folder=23_26
-ARG oracle_version=23.26.0.0.0
+ARG oracle_version=23.26.1.0.0
 
 RUN echo "#!/bin/bash\nalias ll='ls -lah'\n\nexport BASE_VERSION=${BASE_VERSION}-$(python3 --version 2>&1 | cut -d ' ' -f 2)" > /etc/profile.d/base.sh ; chmod +x /etc/profile.d/base.sh
 

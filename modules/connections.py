@@ -5,7 +5,7 @@ import csv
 
 import json
 
-from typing import Any
+from typing import Any, Optional
 
 import modules.logging as logging
 from modules.logging import logLevel as logLevel
@@ -164,7 +164,7 @@ def preCheck(raw_connections:dict[int, dict[str, Any]]) -> dict[str, dict[str, A
     logging.logPrint(f'final connections data:\n{json.dumps(conns, indent=2)}\n', logLevel.DEBUG)
     return conns
 
-def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_mode = 'w', p_test_mode:bool=False) -> dict[int, Any]:
+def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_mode = 'w', p_test_mode:bool=False) -> Optional[dict[int, Any]]:
     ''' creates connection objects to sources or destinations
         returns an array of connections, if connecting to databases, or an array of tupples of (file, stream), if driver == csv
     '''
@@ -191,7 +191,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                         pass #do not remove as on production mode we comment the previous line
             except (Exception, pyodbc.DatabaseError) as e: # type:ignore
                 logging.processError(p_e=e, p_message=p_name, p_stop=True, p_exitCode=2)
-                return {}
+                return None
 
         case 'cx_Oracle':
             try:
@@ -218,7 +218,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
 
             except Exception as e:
                 logging.processError(p_e=e, p_message=p_name, p_stop=True, p_exitCode=2)
-                return {}
+                return None
 
         case 'psycopg2':
             try:
@@ -238,7 +238,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                     nc[x].readonly = p_readOnly
             except Exception as e:
                 logging.processError(p_e=e, p_message=p_name, p_stop=True, p_exitCode=2)
-                return {}
+                return None
 
         case 'mysql':
             try:
@@ -259,7 +259,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                         pass #do not remove as on production mode we comment the previous line
             except Exception as e:
                 logging.processError(p_e=e, p_message=p_name, p_stop=True, p_exitCode=2)
-                return {}
+                return None
 
         case 'mariadb':
             try:
@@ -279,7 +279,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                         pass #do not remove as on production mode we comment the previous line
             except Exception as e:
                 logging.processError(p_e=e, p_message=p_name, p_stop=True, p_exitCode=2)
-                return {}
+                return None
 
         case 'databricks':
             #https://docs.databricks.com/en/dev-tools/python-sql-connector.html#auth-m2m
@@ -312,7 +312,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
 
                 except Exception as e:
                     logging.processError(p_e=e, p_message=f'({p_name}): databricks auth, trying to retrieve Token', p_stop=True, p_exitCode=2)
-                    return {}
+                    return None
 
                 logging.logPrint(f'({p_name}): databricks auth: got Token: [{token}]', logLevel.DEBUG, reportFrom=True)
 
@@ -330,7 +330,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                     logging.logPrint(f'({p_name}): databricks[{x}]: connected.', logLevel.DEBUG, reportFrom=True)
             except Exception as e:
                 logging.processError(p_e=e, p_message=p_name, p_stop=True, p_exitCode=2)
-                return {}
+                return None
 
         case 'csv':
             try:
@@ -373,7 +373,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                             os.makedirs(name=_path)
                         except Exception as e:
                             logging.processError(p_message=f'({p_name}): directory does not exist, and exception happened when trying to create it [{_path}]', p_stop=True, p_exitCode=2)
-                            return {}
+                            return None
 
                 sFileName = ''
                 logging.logPrint(f'({p_name}): dumping CSV files to {_paths}', logLevel.DEBUG, reportFrom=True)
@@ -441,7 +441,7 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
             cur.close()
     except Exception as e:
         logging.processError(p_e=e, p_message=p_name, p_stop=True, p_exitCode=2)
-        return {}
+        return None
 
     return nc
 

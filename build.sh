@@ -20,7 +20,6 @@ FINALNAME=${FINALNAME:-datacopy}
 BASEDOCKERFILE=${BASEDOCKERFILE:-base.Dockerfile}
 FINALDOCKERFILE=${FINALDOCKERFILE:-justcode.Dockerfile}
 
-VERSION=$(grep 'ARG version=' ${FINALDOCKERFILE} | cut -d= -f2 | tr -d '"')
 
 if [ ! -z "${EXTRAVERSION}" ]; then
 	EXTRAVERSION="-${EXTRAVERSION}"
@@ -31,13 +30,15 @@ if [ "${SKIP_BUILD_BASE}" != "yes" ]; then
 	docker rm baseexport 2>&1 >/dev/null
 	docker rmi ${BASENAME}:build ${BASENAME}:flat
 
+	VERSION=$(grep 'ARG base_version=' ${BASEDOCKERFILE} | cut -d= -f2 | tr -d '"')
+
 	if [ -z "${SKIP_PULL_PYTHON}" ]; then
 		echo "*** refreshing ${BASEIMAGE}"
 		docker pull ${BASEIMAGE}
 	fi
 
 	echo "*** building ${BASENAME}:build"
-	if 	docker build --shm-size=2G -t ${BASENAME}:build -f ${BASEDOCKERFILE} --build-arg BASEIMAGE=${BASEIMAGE} ${PROXY_ARGS} "$@" . && \
+	if 	docker build --shm-size=2G -t ${BASENAME}:build -t ${BASENAME}:${VERSION} -f ${BASEDOCKERFILE} --build-arg BASEIMAGE=${BASEIMAGE} ${PROXY_ARGS} "$@" . && \
 		docker run --name baseexport ${BASENAME}:build /bin/true && \
 		docker export baseexport | docker import - ${BASENAME}:flat ; then
 		docker rm baseexport 2>&1 >/dev/null
@@ -62,4 +63,6 @@ if [ ! -z "${BASENAME}" ]; then
 	BARGS="${BARGS} --build-arg BASENAME=${BASENAME}"
 fi
 
-docker build -t ${FINALNAME}${EXTRAVERSION}:latest -t ${VERSION} -f ${FINALDOCKERFILE} . ${BARGS} ${PROXY_ARGS} "$@"
+VERSION=$(grep 'ARG version=' ${FINALDOCKERFILE} | cut -d= -f2 | tr -d '"')
+
+docker build -t ${FINALNAME}${EXTRAVERSION}:latest -t ${FINALNAME}${EXTRAVERSION}:${VERSION} -f ${FINALDOCKERFILE} . ${BARGS} ${PROXY_ARGS} "$@"
