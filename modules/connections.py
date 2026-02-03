@@ -325,7 +325,8 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                         #access_token = access_token,
                         client_name=shared.applicationName,
                         connection_timeout = shared.connectionTimeoutSecs,
-                        query_timeout=shared.idleTimeoutSecs
+                        query_timeout=shared.idleTimeoutSecs,
+                        http_timeout=shared.idleTimeoutSecs
                     )
                     logging.logPrint(f'({p_name}): databricks[{x}]: connected.', logLevel.DEBUG, reportFrom=True)
             except Exception as e:

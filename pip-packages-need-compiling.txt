@@ -1,4 +1,4 @@
 psycopg2
 mariadb
 cx_Oracle
-databricks-sql-connector
+databricks-sql-connector[pyarrow]
