@@ -56,6 +56,12 @@ See other sample-* files to have an idea of configuration.
         - t means truncate, insert, leave log file open for next query
         - i just inserts, leave log file open for next query
         - I insert and close the log file.
+        - e can be used for example to switch tables after a copy. in mysql, it can even happen in a single statement, like:
+            "RENAME TABLE MYTABLE TO MYTABLE_temp, MYTABLE_loading TO MYTABLE, MYTABLE_temp TO MYTABLE_loading"
+            combined with regexes, you can have a sql file like:
+            "RENAME TABLE #TABLENAME# TO #TABLENAME#_temp, #TABLENAME#_loading TO #TABLENAME#, #TABLENAME#_temp TO #TABLENAME#_loading"
+            and just refer it as @switch_tables.sql on the jobs file, with a regex to replace #TABLENAME# with the proper name.
+
 
 - query: can be a "select * from...", but if first char is @, means a file path to read the query from. or it can be just a table name, and it will build automatically a SELECT "[col1]","[col2]",(..)"[colN]" from [table].
 - table: destination table name.
@@ -67,7 +73,7 @@ See other sample-* files to have an idea of configuration.
 
 - parallel_writers: how many processes are launched to process the queue and to write to the database. default 1.
 
-- regexes: can be a placeholder/value, but if first char is @, reads placeholders values from a file, tab delimited. placeholders can be something like #DT_INI#, or anything easily searchable/replaceable on sql files. &&DT_INI is nice with oracle data sources, as the same sql statement will work on sql developer/sqlplus and will ask for replacement values.
+- regexes: can be a placeholder/value, like for instance: #TABLENAME#/MYTABLE. If first char is @, reads placeholders values from a file, tab delimited, one regex per line. placeholders can be something like #DT_INI#, or anything easily searchable/replaceable on sql files. &&DT_INI is nice with oracle data sources, as the same sql statement will work on sql developer/sqlplus and will ask for replacement values.
 
 - insert_cols: can be a list of columns to build the insert statement (comma delimited), or:
     - @: build from source query column names (default option)
