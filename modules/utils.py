@@ -139,3 +139,21 @@ def read_csv_config(filename, *, emptyValuesDefault=None, sequencialLineNumbers:
             sequencialLineNumber += 1
 
     return data
+
+def seconds_to_readable(seconds:float) -> str:
+        minutes = seconds // 60
+        hours = minutes // 60
+        days = hours // 24
+        minutes %= 60
+        hours %= 24
+        seconds %= 60
+        if days > 0:
+            formatted = f'{round(days)}d {round(hours)}h {round(minutes)}m {round(seconds)}s'
+        elif hours > 0:
+            formatted = f'{round(hours)}h {round(minutes)}m {round(seconds)}s'
+        elif minutes > 0:
+            formatted = f'{round(minutes)}m {round(seconds)}s'
+        else:
+            formatted = f'{seconds:,.2f} seconds'
+
+        return formatted

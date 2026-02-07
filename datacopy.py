@@ -187,9 +187,6 @@ def Main():
 
     if shared.DEBUG:
         print('closeLog: log thread terminated and joined.', file=sys.stderr, flush=True)
-
-
-    if shared.DEBUG:
         print ('end of Main()', file=sys.stderr, flush=True)
 
     sys.exit(shared.exitCode.value)

@@ -32,13 +32,14 @@ def jobManager():
         iRunningReaders:int = 0
         iReadingReaders:int = 0
         iRunningQueries:int = 0
+        iRunningStatements:int = 0
 
         tParallelReadersNextCheck:float = 0
 
         jobID = 1
 
         iDataLinesRead:dict[int, int] = {}
-        iReadSecs:dict[int, float] = {}
+        fReadSecs:dict[int, float] = {}
         iDetailsQueriesSecs:dict[int, float] = {}
 
         iIdleTimeout:int = 0
@@ -59,14 +60,14 @@ def jobManager():
             sCSVHeader = ''
 
             iTotalDataLinesRead = 0
-            iTotalReadSecs = .001
+            fTotalReadSecs = .001
 
             iRunningWriters = 0
             iTotalDataLinesWritten = 0
-            iTotalWrittenSecs = .001
+            fTotalWrittenSecs = .001
 
             iDataLinesRead[jobID] = 0
-            iReadSecs[jobID] = .001
+            fReadSecs[jobID] = .001
 
             writersNotStartedYet = True
 
@@ -81,7 +82,7 @@ def jobManager():
 
             shared.idleSecsObserved.value = 0
 
-            iStart = timer()
+            fStart = timer()
 
             if not shared.TEST_QUERIES:
                 # cleaning up destination before inserts
@@ -164,9 +165,8 @@ def jobManager():
                             cGetMaxID.close()
                             cConn.close()
 
-
             logging.logPrint('entering insert loop...', p_jobID=jobID)
-            shared.eventQueue.put( (shared.E_BOOT_READER, jobID, None, None ) )
+            shared.eventQueue.put( (shared.E_BOOT, jobID, None, None ) )
 
             #################################
             ### inner loop (for each job on to the same stream, ie, target table. event based.)
@@ -177,7 +177,7 @@ def jobManager():
             dumpedPackets:int = 0
             emptyQueueTimeout:int = 5
             bFirstDetailQueryStarted = False
-            iActiveJobsOnThisStream:int = 1 #starts at one because the first boot reader event is triggered above
+            iActiveJobsOnThisStream:int = 0
 
             while bKeepGoing:
                 eJobID = 0
@@ -195,12 +195,69 @@ def jobManager():
                         case shared.E_READ:
                             iDataLinesRead[eJobID] += recs
                             iTotalDataLinesRead += recs
-                            iReadSecs[eJobID] += secs
-                            iTotalReadSecs += secs
+                            fReadSecs[eJobID] += secs
+                            fTotalReadSecs += secs
 
                         case shared.E_WRITE:
                             iTotalDataLinesWritten += recs
-                            iTotalWrittenSecs += secs
+                            fTotalWrittenSecs += secs
+
+                        case shared.E_BOOT:
+                            if not shared.Working.value:
+                                continue
+                            launchJob = jobs.Job(jobID)
+                            if launchJob.mode.upper() == 'E':
+                                shared.eventQueue.put( (shared.E_BOOT_CMD, jobID, None, None ) )
+                            else:
+                                shared.eventQueue.put( (shared.E_BOOT_READER, jobID, None, None ) )
+
+                        case shared.E_BOOT_CMD:
+                            if not shared.Working.value:
+                                continue
+
+                            #disable parallel command launch
+                            tParallelReadersNextCheck = float('inf')
+
+                            iActiveJobsOnThisStream +=1
+
+                            iDataLinesRead[eJobID] = 0
+                            fReadSecs[eJobID] = .001
+
+                            thisJob = jobs.Job(eJobID)
+                            jobName = thisJob.jobName
+
+                            newConns = connections.initConnections(thisJob.source, p_readOnly=False, p_qtd=1)
+                            if newConns is not None:
+                                shared.GetConn[eJobID] = newConns[0]
+                            else:
+                                break
+                            shared.GetData[eJobID] = connections.initCursor(p_conn=shared.GetConn[eJobID], p_jobID=eJobID, p_source=thisJob.dest, p_fetchSize=thisJob.fetchSize)
+
+                            logging.logPrint(f'executing statement on [{thisJob.source}] with query:\n***\n{thisJob.query}\n***', p_jobID=eJobID)
+                            r=mp.Process(target=datahandlers.executeStatement, args = (eJobID, shared.GetConn[eJobID], shared.GetData[eJobID], thisJob.source, thisJob.query))
+                            shared.readP[eJobID]=r
+
+                            r.start()
+
+                        case shared.E_CMD_START:
+                            #disable parallel command launch
+                            tParallelReadersNextCheck = float('inf')
+                            iRunningStatements += 1
+                            logging.statsPrint(p_type='execStatementStart', p_jobID=eJobID, p_recs=0, p_secs=0, p_threads=1)
+
+                        case shared.E_CMD_ERROR:
+                            tParallelReadersNextCheck = timer() + shared.parallelReadersLaunchInterval
+                            iRunningStatements -= 1
+                            iActiveJobsOnThisStream -=1
+                            logging.statsPrint(p_type='execStatementError', p_jobID=eJobID, p_recs=secs, p_secs=0, p_threads=0)
+                            logging.processError(p_message='Statement ERROR event', p_dontSendToStats=True, p_jobID=eJobID, p_stop=True, p_exitCode=8)
+
+
+                        case shared.E_CMD_END:
+                            tParallelReadersNextCheck = timer() + shared.parallelReadersLaunchInterval
+                            iRunningStatements -= 1
+                            logging.statsPrint(p_type='execStatementEnd', p_jobID=eJobID, p_recs=0, p_secs=secs, p_threads=0)
+                            iActiveJobsOnThisStream -=1
 
                         case shared.E_BOOT_READER:
 
@@ -208,8 +265,10 @@ def jobManager():
                             if not shared.Working.value:
                                 continue
 
+                            iActiveJobsOnThisStream += 1
+
                             iDataLinesRead[eJobID] = 0
-                            iReadSecs[eJobID] = .001
+                            fReadSecs[eJobID] = .001
 
                             thisJob = jobs.Job(eJobID)
                             jobName = thisJob.jobName
@@ -297,13 +356,15 @@ def jobManager():
                                     iRunningReaders += 1
 
                             iDataLinesRead[r1JobID] = 0
-                            iReadSecs[r1JobID] = .001
+                            fReadSecs[r1JobID] = .001
 
                             if r1SourceDriver == 'csv':
                                 shared.readP[r1JobID]=mp.Process(target=datahandlers.readDataCSV, args = (r1JobID, shared.GetConn[r1JobID], r1FetchSize, outQueue, r1FinalDataReader))
                             else:
                                 shared.readP[r1JobID]=mp.Process(target=datahandlers.readData, args = (r1JobID, shared.GetConn[r1JobID], shared.GetData[r1JobID], r1FetchSize, r1Query, outQueue, r1FinalDataReader))
                             shared.readP[r1JobID].start()
+
+                            tParallelReadersNextCheck = timer() + shared.parallelReadersLaunchInterval
 
                         case shared.E_QUERY_START:
                             iRunningQueries += 1
@@ -345,7 +406,7 @@ def jobManager():
                                 logging.statsPrint('readDataStart', p_jobID=eJobID, p_recs=secs, p_secs=0, p_threads=iRunningReaders)
                                 iRunningWriters = 0
                                 iTotalDataLinesWritten = 0
-                                iTotalWrittenSecs = .001
+                                fTotalWrittenSecs:float = .001
                                 logging.logPrint(f'writersNotStartedYet, processing cols to prepare insert statement: [{recs}]', logLevel.DEBUG, p_jobID=eJobID)
                                 sColNames = ''
                                 sColsPlaceholders = ''
@@ -434,12 +495,12 @@ def jobManager():
                                                 shared.writeP[iWriters].start()
                                             else:
                                                 shared.PutData[iWriters] = shared.PutConn[iWriters].cursor()
-                                                if len(thisJob.preQueryDst) > 0:
+                                                if len(thisJob.preCmdDst) > 0:
                                                     try:
-                                                        logging.logPrint(f'preparing cursor #{iWriters} for inserts, executing preQueryDst=[{thisJob.preQueryDst}]', logLevel.DEBUG, p_jobID=eJobID)
-                                                        shared.PutData[iWriters].execute(thisJob.preQueryDst)
+                                                        logging.logPrint(f'preparing cursor #{iWriters} for inserts, executing preCmdDst=[{thisJob.preCmdDst}]', logLevel.DEBUG, p_jobID=eJobID)
+                                                        shared.PutData[iWriters].execute(thisJob.preCmdDst)
                                                     except Exception as e:
-                                                        logging.processError(p_e=e, p_message=f'preparing cursor #{iWriters} for inserts, preQueryDst=[{thisJob.preQueryDst}]', p_jobID=eJobID,p_dontSendToStats=True)
+                                                        logging.processError(p_e=e, p_message=f'preparing cursor #{iWriters} for inserts, preCmdDst=[{thisJob.preCmdDst}]', p_jobID=eJobID,p_dontSendToStats=True)
                                                 shared.writeP[iWriters] = (mp.Process(target=datahandlers.writeData, args = (eJobID, iWriters, shared.PutConn[iWriters], shared.PutData[iWriters], iQuery) ))
                                                 shared.writeP[iWriters].start()
                                             iWriters += 1
@@ -449,7 +510,7 @@ def jobManager():
                                         logging.statsPrint('writeDataStart', eJobID, 0, 0, thisJob.nbrParallelWriters)
 
                         case shared.E_READ_ERROR:
-                            logging.statsPrint('readDataError', eJobID, iDataLinesRead[eJobID], iReadSecs[eJobID], iRunningReaders)
+                            logging.statsPrint('readDataError', eJobID, iDataLinesRead[eJobID], fReadSecs[eJobID], iRunningReaders)
                             logging.processError(p_message='READ ERROR event', p_dontSendToStats=True, p_jobID=eJobID, p_stop=True, p_exitCode=6)
 
                         case shared.E_READ_END:
@@ -459,7 +520,7 @@ def jobManager():
                             # readData2 stuffs the threaID in recs
                             if recs is None:
                                 iActiveJobsOnThisStream -=1
-                                logging.statsPrint('readDataEnd', eJobID, iDataLinesRead[eJobID], iReadSecs[eJobID], iRunningReaders)
+                                logging.statsPrint('readDataEnd', eJobID, iDataLinesRead[eJobID], fReadSecs[eJobID], iRunningReaders)
                                 try:
                                     shared.readP[eJobID].join(timeout=1)
                                 except:
@@ -468,7 +529,7 @@ def jobManager():
                                 #only print stats on last thead end
                                 if iRunningReaders == 0:
                                     iActiveJobsOnThisStream -= 1
-                                    logging.statsPrint('readDataEnd', eJobID, iDataLinesRead[eJobID], iReadSecs[eJobID], iRunningReaders)
+                                    logging.statsPrint('readDataEnd', eJobID, iDataLinesRead[eJobID], fReadSecs[eJobID], iRunningReaders)
                                 try:
                                     shared.readP[recs].join(timeout=1)
                                 except:
@@ -482,7 +543,7 @@ def jobManager():
                         case shared.E_KEYS_READ_END:
                             with shared.stopWhenKeysEmpty.get_lock():
                                 shared.stopWhenKeysEmpty.value = True
-                            logging.statsPrint('keysReadEnd', eJobID, iDataLinesRead[eJobID], iReadSecs[eJobID], iRunningWriters)
+                            logging.statsPrint('keysReadEnd', eJobID, iDataLinesRead[eJobID], fReadSecs[eJobID], iRunningWriters)
 
                         case shared.E_WRITE_START:
                             pass
@@ -578,8 +639,7 @@ def jobManager():
                         if jobID<len(shared.jobs):
                             jobID += 1
                             jobName = shared.getJobName(jobID)
-                            iActiveJobsOnThisStream += 1
-                            shared.eventQueue.put( (shared.E_BOOT_READER, jobID, None, None ) )
+                            shared.eventQueue.put( (shared.E_BOOT, jobID, None, None ) )
                         else:
                             logging.logPrint('no more jobs, stopping launches', logLevel.DEBUG, p_jobID=jobID)
                             jobID += 1
@@ -592,20 +652,30 @@ def jobManager():
 
                 if shared.Working.value:
                     if shared.SCREEN_STATS:
-                        statsLine=f'\r{iTotalDataLinesRead:,} recs read ({(iTotalDataLinesRead/iTotalReadSecs):,.2f}/sec, {iReadingReaders}r,{iRunningQueries}q), {iTotalDataLinesWritten:,} recs written ({(iTotalDataLinesWritten/iTotalWrittenSecs):,.2f}/sec, {iRunningWriters}w), queue len: {iCurrentQueueSize:,}, max queue: {shared.maxQueueLenObserved:,}, timeout timer: {iIdleTimeout:,}, idle time: {shared.idleSecsObserved.value:,}, activeJobs: {iActiveJobsOnThisStream}        '
+                        if iRunningStatements > 0:
+                            statsLine=f'\r excecuting statement of Job [{jobName}], timeout timer: {iIdleTimeout:,}, idle time: {shared.idleSecsObserved.value:,}        '
+                        else:
+                            statsLine=f'\r{iTotalDataLinesRead:,} recs read ({(iTotalDataLinesRead/fTotalReadSecs):,.2f}/sec, {iReadingReaders}r,{iRunningQueries}q), {iTotalDataLinesWritten:,} recs written ({(iTotalDataLinesWritten/fTotalWrittenSecs):,.2f}/sec, {iRunningWriters}w), queue len: {iCurrentQueueSize:,}, max queue: {shared.maxQueueLenObserved:,}, timeout timer: {iIdleTimeout:,}, idle time: {shared.idleSecsObserved.value:,}, activeJobs: {iActiveJobsOnThisStream}        '
                         if shared.SCREEN_STATS_TO_STDOUT:
                             print(statsLine, file=sys.stdout, end='', flush = True)
                         else:
                             print(statsLine, file=sys.stderr, end='', flush = True)
-                    logging.logPrint(f'reads:{iTotalDataLinesRead:,} ({(iTotalDataLinesRead/iTotalReadSecs):,.2f}/s, {iReadingReaders}r,{iRunningQueries}q); writes:{iTotalDataLinesWritten:,} ({(iTotalDataLinesWritten/iTotalWrittenSecs):,.2f}/s, {iRunningWriters}w); ql:{iCurrentQueueSize:,}, mq:{shared.maxQueueLenObserved:,}; i:{iIdleTimeout:,}, it:{shared.idleSecsObserved.value:,}, Working={shared.Working.value}, ActiveJobs={iActiveJobsOnThisStream}', logLevel.STATSONPROCNAME)
+                    logging.logPrint(f'reads:{iTotalDataLinesRead:,} ({(iTotalDataLinesRead/fTotalReadSecs):,.2f}/s, {iReadingReaders}r,{iRunningQueries}q); writes:{iTotalDataLinesWritten:,} ({(iTotalDataLinesWritten/fTotalWrittenSecs):,.2f}/s, {iRunningWriters}w); ql:{iCurrentQueueSize:,}, mq:{shared.maxQueueLenObserved:,}; i:{iIdleTimeout:,}, it:{shared.idleSecsObserved.value:,}, Working={shared.Working.value}, ActiveJobs={iActiveJobsOnThisStream}', logLevel.STATSONPROCNAME)
 
-            logging.statsPrint('queueStats', jobID, shared.maxQueueLenObserved, shared.maxQueueLenObservedEvents, 0)
+
+            fEnd = timer()
+            fTimeTaken = fEnd - fStart
+
             print('\n\n', file=sys.stdout, flush = True)
-            iEnd = timer()
-            iTimeTaken = iEnd - iStart
-            logging.logPrint(f'{iTotalDataLinesWritten:,} rows copied in {iTimeTaken:,.2f} seconds ({(iTotalDataLinesWritten/iTimeTaken):,.2f}/sec).')
-            logging.statsPrint('writeDataEnd', jobID, iTotalDataLinesWritten, iTotalWrittenSecs, shared.dataQueue.qsize())
-            logging.statsPrint('streamEnd', jobID, shared.idleSecsObserved.value, iTimeTaken, 0)
+
+            if iTotalDataLinesWritten > 0:
+                logging.statsPrint('queueStats', jobID, shared.maxQueueLenObserved, shared.maxQueueLenObservedEvents, 0)
+                logging.logPrint(f'{iTotalDataLinesWritten:,} rows copied in {utils.seconds_to_readable(fTimeTaken)} ({(iTotalDataLinesWritten/fTimeTaken):,.2f}/sec).')
+                logging.statsPrint('writeDataEnd', jobID, iTotalDataLinesWritten, fTotalWrittenSecs, shared.dataQueue.qsize())
+            else:
+                logging.logPrint(f'statement(s) executed in {utils.seconds_to_readable(fTimeTaken)}')
+
+            logging.statsPrint('streamEnd', jobID, shared.idleSecsObserved.value, fTimeTaken, 0)
             shared.maxQueueLenObserved = 0
             shared.maxQueueLenObservedEvents = 0
             logging.logPrint(f'end of inner loop, with jobID=[{jobID}]', logLevel.DEBUG)

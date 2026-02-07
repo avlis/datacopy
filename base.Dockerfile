@@ -2,7 +2,7 @@
 # --- Global Scope ---
 ARG PYTHON_VER=3.14
 ARG BASEIMAGE=python:${PYTHON_VER}-slim
-ARG base_version="base-20260203-001"
+ARG base_version="base-20260204-001"
 
 
 ################ STAGE 1 (builder) ################
@@ -17,7 +17,7 @@ ENV BASE_VERSION=${base_version}
 
 # COMPILER TOOLS TO pip packages that need compiling
 RUN apt-get update \
-	&& ACCEPT_EULA=Y apt-get -y install g++ libpq-dev libmariadb-dev #python3-dev libmariadb3   
+	&& ACCEPT_EULA=Y apt-get -y install g++ libpq-dev libmariadb-dev #python3-dev libmariadb3
 
 WORKDIR /app
 

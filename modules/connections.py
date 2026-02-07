@@ -50,7 +50,6 @@ change_timeout_cmd:dict[str, str] = {
     '':             ''
 }
 
-
 insert_objects_delimiter = {
     'psycopg2':     '"',
     'mysql':        '`',

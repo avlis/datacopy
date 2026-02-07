@@ -11,7 +11,7 @@ the following env vars can be used to control it:
 - JOB_FILE: the csv file (default jobs.csv)
 - LOG_NAME: the output files name prefix. (defaults to timestamp)
 - TEST_QUERIES: set to 'yes' to only execute the select, and does not delete/write on destinations
-- QUEUE_SIZE: (default 256) 
+- QUEUE_SIZE: (default 256)
 - REUSE_WRITERS: (default no)
 - QUEUE_FB4NEWR: default 3, means that the buffer can be only 1/3 full before starting the next reader, if reusing writers.
 - DUMP_ON_ERROR (default no)
@@ -25,11 +25,11 @@ the following env vars can be used to control it:
 - BUILD_DEBUG (default no, if yes instead of launching the python app runs /bin/bash)
 - PARALLEL_READERS (default 1)
 - ADD_NAMES_DELIMITERS (default no, yes to add double quotes or backticks on table and column name; useful if someone used reserved words as table names... or spaces)
-- RUNAS_UID, GID: to create a regular, non privileged user to run the copy, and to create the log and stat files with the same user id and group id of a regular user on the host (instead of root). 
+- RUNAS_UID, GID: to create a regular, non privileged user to run the copy, and to create the log and stat files with the same user id and group id of a regular user on the host (instead of root).
 - IDLE_TIMEOUT_SECS: by default, datacopy will wait forever. it can be thhe case that the sources will never finish processing the query, or the destination is locked and commits don't happen. in this situations, this setting can be used to give up. NOTE: does not apply to delete/truncate stage; it just kicks in after the data copy stage. It resets every time there is an event (packet received, packet wrote, query starts, query ends, etc)
 - EXECUTION_ID: when running a lot of these things, its practical. as is shows on stats and log files.
-- COLLECT_MEMORY_STATS (default no, if yes will produce a new .memory log file), with memory in MB per process) 
-- COLLECT_MEMORY_STATS_INTERVAL_SECS (default 1, can be used to change interval. it's a float, but anything below .2 will probably not be effective) 
+- COLLECT_MEMORY_STATS (default no, if yes will produce a new .memory log file), with memory in MB per process)
+- COLLECT_MEMORY_STATS_INTERVAL_SECS (default 1, can be used to change interval. it's a float, but anything below .2 will probably not be effective)
 - MEMORY_STATS_IN_JSON (if yes output is json like instead of csv)
 
 - LOG_TIMESTAMP_FORMAT, STATS_TIMESTAMP_FORMAT, MEMORY_STATS_TIMESTAMP_FORMAT: you can choose between unix, float; date (regular date format, str); or compact (20250108223421.493323, dateandtime.milisecs)
@@ -43,15 +43,16 @@ See other sample-* files to have an idea of configuration.
 
 - source, dest: must match something on first column of connections.csv
 
-- mode: 
+- mode:
     - caps mean close log file after this one
     - t means truncate, d delete before inserting
     - i means just insert.
-    - a means after, gets a max value from destination to adjust the source query. see append_column and append_query for more details. 
+    - a means after, gets a max value from destination to adjust the source query. see append_column and append_query for more details.
+    - e means execute statement only, ignores output. On source connection. dest, table and other copy related columns on jobs are ignored.
 
-    examples: 
-    
-        - T means truncate, insert data, and close log file. 
+    examples:
+
+        - T means truncate, insert data, and close log file.
         - t means truncate, insert, leave log file open for next query
         - i just inserts, leave log file open for next query
         - I insert and close the log file.
@@ -75,13 +76,13 @@ See other sample-* files to have an idea of configuration.
     - @d: build from destination (cannot be used if destination is csv)
     - anything else: comma delimited list of column names.
 
-- ignore_cols: a list of column names, separated by comma. 
+- ignore_cols: a list of column names, separated by comma.
 
-- pre_query_src, pre_query_dst: like query, but will run on source or destination connections before other statements. for things like "set dateformat ymd", for instance...
+- src_pre_cmd, dst_pre_cmd, key_pre_cmd: like query, but will run on source or destination connections before other statements. for things like "set dateformat ymd", for instance...
 
-- csv_encode_special: when we have \n or \t or other control characters on data, it may mess up the csv file. 
+- csv_encode_special: when we have \n or \t or other control characters on data, it may mess up the csv file.
     this option will translate special chars (ascill < 32 to \0x string representation)
-    this translation is always applied to DUMP files. 
+    this translation is always applied to DUMP files.
 
 - override_insert_placeholder: to override the default %s insert placeholder. Found that some azure stuff need a ? instead...
 
@@ -143,7 +144,7 @@ or json mode:
 ### fields:
 - ts: timestamp of this event
 - execID: can be used to group batches of datacopys, running as one big logical job. Useful if you run a couple of datacopys hourly, and send these stats to elasticsearch, for example.
-- event: execQuery is about cursor.execute(), read is reads, write is writes, stream marks the beginings and ends of groups of jobs whitin this job file.  
+- event: execQuery is about cursor.execute(), read is reads, write is writes, stream marks the beginings and ends of groups of jobs whitin this job file.
 - jobID (concat of line number, source, destination, destination table name, from jobs.csv file)
 - recs: number of records read or written in this particular event. Only makes sense in *Ends.
 - secs: total seconds of read or write operations. Only makes sense in *Ends. On multi threading writers, it is the sum of all threads (so, bigger than real time spent.). in streamEnd, it means real time seconds.
@@ -174,4 +175,3 @@ if you are just updating the python code, you can run:
 ```
 SKIP_PULL_PYTHON=yes SKIP_BUILD_BASE=yes ./build.sh
 ```
- 

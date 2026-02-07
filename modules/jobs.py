@@ -24,10 +24,6 @@ class Job:
 
         ### "PUBLIC PROPERTIES"
         self.jobID = p_jobID
-        if 'jobName' in thisJobData:
-            self.jobName = thisJobData['jobName']
-        else:
-            self.jobName = f'{p_jobID}-{thisJobData["source"]}-{thisJobData["dest"]}-{thisJobData["table"]}'
 
         self.source:str = thisJobData['source']
         self.sourceDriver:str = str(connections.getConnectionParameter(self.source, 'driver'))
@@ -48,8 +44,21 @@ class Job:
             self.key_query = thisJobData['key_query']
         else:
             self.key_query = ''
-        self.preQuerySrc = ''
-        self.preQueryDst = ''
+        self.preCmdSrc = ''
+        self.preCmdDst = ''
+
+        if 'jobName' in thisJobData:
+            self.jobName = thisJobData['jobName']
+        else:
+            if self.mode.upper() == 'E':
+                if len(self.query) > 0 and self.query[0] == '@':
+                        statementName:str = self.query[1:]
+                else:
+                    statementName:str = 'ExecuteStatement'
+
+                self.jobName = f'{p_jobID}-{thisJobData["source"]}-{statementName}'
+            else:
+                self.jobName = f'{p_jobID}-{thisJobData["source"]}-{thisJobData["dest"]}-{thisJobData["table"]}'
 
         siObjSep = connections.getConnectionParameter(self.dest, 'insert_object_delimiter')
 
@@ -58,26 +67,26 @@ class Job:
         if len(self.key_query) > 0 and self.key_query[0] == '@':
                 self.key_query = _readSqlFile(self.key_query[1:])
 
-        if 'src_pre_query' in thisJobData:
-            self.preQuerySrc = thisJobData['src_pre_query']
-            if len(self.preQuerySrc) > 0 and self.preQuerySrc[0]  == '@':
-                self.preQuerySrc = _readSqlFile(self.preQuerySrc[1:])
+        if 'src_pre_cmd' in thisJobData:
+            self.preCmdSrc = thisJobData['src_pre_cmd']
+            if len(self.preCmdSrc) > 0 and self.preCmdSrc[0]  == '@':
+                self.preCmdSrc = _readSqlFile(self.preCmdSrc[1:])
 
-        if 'dst_pre_query' in thisJobData:
-            self.preQueryDst = thisJobData['dst_pre_query']
-            if len(self.preQueryDst) > 0 and self.preQueryDst[0]  == '@':
-                self.preQueryDst = _readSqlFile(self.preQueryDst[1:])
+        if 'dst_pre_cmd' in thisJobData:
+            self.preCmdDst = thisJobData['dst_pre_cmd']
+            if len(self.preCmdDst) > 0 and self.preCmdDst[0]  == '@':
+                self.preCmdDst = _readSqlFile(self.preCmdDst[1:])
 
         if 'regexes' in thisJobData:
             regexes = thisJobData['regexes']
-            if regexes[0] == '@':
-                with open(regexes[1:], 'r', encoding = 'utf-8') as file:
-                    regexes = file.read().split('\n')
-            else:
-                if len(regexes)>0:
-                    regexes = [regexes.replace('/','\t')]
+            if len(regexes)>0:
+                if regexes[0] == '@':
+                    with open(regexes[1:], 'r', encoding = 'utf-8') as file:
+                        regexes = file.read().split('\n')
                 else:
-                    regexes = None
+                    regexes = [regexes.replace('/','\t')]
+            else:
+                regexes = None
 
             self.regexes:dict[str, str] = {}
             if regexes is not None:
@@ -88,8 +97,8 @@ class Job:
                         logging.logPrint(f'replacing [{r[0]}] with [{r[1]}] on queries', p_jobID=p_jobID)
                         self.query = re.sub( r[0], r[1], self.query )
                         self.key_query = re.sub( r[0], r[1], self.key_query )
-                        self.preQuerySrc = re.sub( r[0], r[1], self.preQuerySrc )
-                        self.preQueryDst = re.sub( r[0], r[1], self.preQueryDst )
+                        self.preCmdSrc = re.sub( r[0], r[1], self.preCmdSrc )
+                        self.preCmdDst = re.sub( r[0], r[1], self.preCmdDst )
 
         self.table = thisJobData['table']
 
@@ -167,7 +176,7 @@ class Job:
         else:
             self.bCloseStream = True
 
-        #logging.logPrint(f'source=[{source}], key_source=[{key_source}], dest=[{dest}], preQuerySrc=[{preQuerySrc}] preQueryDst=[{preQueryDst}] table=[{table}] closeStream=[{bCloseStream}], CSVEncodeSpecial=[{bCSVEncodeSpecial}], appendKeyColumn=[{appendKeyColumn}], getMaxQuery=[{getMaxQuery}]', logLevel.DEBUG, p_jobID=p_jobID)
+        #logging.logPrint(f'source=[{source}], key_source=[{key_source}], dest=[{dest}], preCmdSrc=[{preCmdSrc}] preCmdDst=[{preCmdDst}] table=[{table}] closeStream=[{bCloseStream}], CSVEncodeSpecial=[{bCSVEncodeSpecial}], appendKeyColumn=[{appendKeyColumn}], getMaxQuery=[{getMaxQuery}]', logLevel.DEBUG, p_jobID=p_jobID)
         logging.logPrint(f'created:\n{json.dumps(self.to_dict(), indent=2)}\n', logLevel.DEBUG, p_jobID=p_jobID)
 
     def to_dict(self) -> dict[str, Any]:
@@ -255,7 +264,7 @@ def preCheck(raw_jobs:dict[int, dict[str, Any]]) -> dict[int, dict[str, Any]]:
             logging.processError(p_message=f'keys source [{key_source}] not declared on connections. giving up.', p_stop=True, p_exitCode=4)
             return {}
 
-        if dest not in shared.connections:
+        if dest not in shared.connections and mode.upper() != 'E':
             logging.processError(p_message=f'data destination [{dest}] not declared on connections. giving up.', p_stop=True, p_exitCode=4)
             return {}
 
@@ -293,28 +302,28 @@ def preCheck(raw_jobs:dict[int, dict[str, Any]]) -> dict[int, dict[str, Any]]:
                 logging.processError(p_message=f'key_query specified, but no key_source specified on connections. giving up.', p_stop=True, p_exitCode=4)
                 return {}
 
-        if 'src_pre_query' in aJob:
-            preQuerySrc = aJob['src_pre_query']
-            if len(preQuerySrc) > 0 and preQuerySrc[0] == '@':
-                if not _preCheckSqlFile(preQuerySrc[1:], 'pre-query on source'): return {}
+        if 'src_pre_cmd' in aJob:
+            preCmdSrc = aJob['src_pre_cmd']
+            if len(preCmdSrc) > 0 and preCmdSrc[0] == '@':
+                if not _preCheckSqlFile(preCmdSrc[1:], 'pre-cmd on source'): return {}
 
-        if 'key_pre_query' in aJob:
-            preQuerySrc2 = aJob['key_pre_query']
-            if len(preQuerySrc2) > 0 and preQuerySrc2[0] == '@':
-                if not _preCheckSqlFile(preQuerySrc2[1:], 'key_pre_query on key_source'): return {}
+        if 'key_pre_cmd' in aJob:
+            preCmdSrc2 = aJob['key_pre_cmd']
+            if len(preCmdSrc2) > 0 and preCmdSrc2[0] == '@':
+                if not _preCheckSqlFile(preCmdSrc2[1:], 'key_pre_cmd on key_source'): return {}
 
             if len(key_source) > 0:
                 if key_source not in shared.connections:
-                    logging.processError(p_message=f'key_pre_query specified, but key_source [{key_source}] not declared on connections. giving up.', p_stop=True, p_exitCode=4)
+                    logging.processError(p_message=f'key_pre_cmd specified, but key_source [{key_source}] not declared on connections. giving up.', p_stop=True, p_exitCode=4)
                     return {}
             else:
-                logging.processError(p_message=f'key_pre_query specified, but no key_source specified on connections. giving up.', p_stop=True, p_exitCode=4)
+                logging.processError(p_message=f'key_pre_cmd specified, but no key_source specified on connections. giving up.', p_stop=True, p_exitCode=4)
                 return {}
 
-        if 'dst_pre_query' in aJob:
-            preQueryDst = aJob['dst_pre_query']
-            if len(preQueryDst) >0 and preQueryDst[0] == '@':
-                if not _preCheckSqlFile(preQueryDst[1:], 'pre-query on destination'): return {}
+        if 'dst_pre_cmd' in aJob:
+            preCmdDst = aJob['dst_pre_cmd']
+            if len(preCmdDst) >0 and preCmdDst[0] == '@':
+                if not _preCheckSqlFile(preCmdDst[1:], 'pre-cmd on destination'): return {}
 
         if 'regexes' in aJob:
             regex = aJob['regexes']
@@ -341,7 +350,17 @@ def preCheck(raw_jobs:dict[int, dict[str, Any]]) -> dict[int, dict[str, Any]]:
                     return {}
 
         #prebuild the jobName used in logs and stats
-        aJob['jobName'] =  f'{key}-{source}-{dest}-{aJob["table"]}'
+
+        if mode.upper() == 'E':
+            if len(query) > 0 and query[0] == '@':
+                    statementName:str = query[1:]
+            else:
+                statementName:str = 'ExecuteStatement'
+
+            aJob['jobName'] = f'{key}-{source}-{statementName}'
+        else:
+            aJob['jobName'] = f'{key}-{source}-{dest}-{aJob["table"]}'
+
 
         allJobs[key]=aJob
     #buffer = StringIO() ; print(shared.jobs, file=buffer, flush=True); logging.logPrint(f'final jobs data:\n{buffer.getvalue()}\n', logLevel.DEBUG)
