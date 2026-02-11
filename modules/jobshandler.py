@@ -205,11 +205,11 @@ def jobManager():
                         case shared.E_BOOT:
                             if not shared.Working.value:
                                 continue
-                            launchJob = jobs.Job(jobID)
+                            launchJob = jobs.Job(eJobID)
                             if launchJob.mode.upper() == 'E':
-                                shared.eventQueue.put( (shared.E_BOOT_CMD, jobID, None, None ) )
+                                shared.eventQueue.put( (shared.E_BOOT_CMD, eJobID, None, None ) )
                             else:
-                                shared.eventQueue.put( (shared.E_BOOT_READER, jobID, None, None ) )
+                                shared.eventQueue.put( (shared.E_BOOT_READER, eJobID, None, None ) )
 
                         case shared.E_BOOT_CMD:
                             if not shared.Working.value:
