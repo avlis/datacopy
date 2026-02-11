@@ -2,7 +2,7 @@
 # --- Global Scope ---
 ARG PYTHON_VER=3.14
 ARG BASEIMAGE=python:${PYTHON_VER}-slim
-ARG base_version="base-20260204-001"
+ARG base_version="base-20260210-002"
 
 
 ################ STAGE 1 (builder) ################
@@ -69,6 +69,7 @@ RUN	echo "https://download.oracle.com/otn_software/linux/instantclient/${oracle_
 RUN echo "https://download.oracle.com/otn_software/linux/instantclient/${oracle_dl_folder}/instantclient-sqlplus-linux.$([ \"$(dpkg --print-architecture)\" = 'arm64' ] && echo arm64 || echo x64 )-${oracle_version}.zip"
 RUN cd /opt && curl https://download.oracle.com/otn_software/linux/instantclient/${oracle_dl_folder}/instantclient-basiclite-linux.$([ "$(dpkg --print-architecture)" = "arm64" ] && echo arm64 || echo x64 )-${oracle_version}.zip > /dev/shm/oic.zip && unzip -o /dev/shm/oic.zip
 RUN cd /opt && curl https://download.oracle.com/otn_software/linux/instantclient/${oracle_dl_folder}/instantclient-sqlplus-linux.$([ "$(dpkg --print-architecture)" = "arm64" ] && echo arm64 || echo x64 )-${oracle_version}.zip > /dev/shm/osp.zip && unzip -o /dev/shm/osp.zip
+RUN ln -s /opt/instantclient_${oracle_opt_folder} /opt/instantclient
 RUN ln -s /opt/instantclient_${oracle_opt_folder}/sqlplus /usr/local/bin
 #Fix for time_t support, as currently there are no oracle drivers linked to 1t64
 RUN ARCH=$(dpkg --print-architecture) && \

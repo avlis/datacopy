@@ -165,7 +165,7 @@ def jobManager():
                             cGetMaxID.close()
                             cConn.close()
 
-            logging.logPrint('entering insert loop...', p_jobID=jobID)
+            logging.logPrint('entering stream loop...', p_jobID=jobID)
             shared.eventQueue.put( (shared.E_BOOT, jobID, None, None ) )
 
             #################################
@@ -327,9 +327,9 @@ def jobManager():
 
                                     r2=mp.Process(target=datahandlers.readData2, args = (eJobID, thisThreadID, shared.GetConn[thisThreadID], shared.GetData[thisThreadID], thisJob.query, thisJob.fetchSize))
                                     shared.readP[thisThreadID]=r2
-                                    iRunningReaders += 1
 
                                     r2.start()
+                                    iRunningReaders += 1
 
 
                                 outQueue:mp.Queue = shared.dataKeysQueue
@@ -353,7 +353,6 @@ def jobManager():
                                     logging.logPrint(f'reading data from [{thisJob.source}] with query:\n***\n{thisJob.query}\n***', p_jobID=eJobID)
                                 else:
                                     logging.logPrint(f'reading data from file [{shared.GetConn[r1JobID][0].name}]', p_jobID=eJobID)
-                                    iRunningReaders += 1
 
                             iDataLinesRead[r1JobID] = 0
                             fReadSecs[r1JobID] = .001
@@ -363,6 +362,7 @@ def jobManager():
                             else:
                                 shared.readP[r1JobID]=mp.Process(target=datahandlers.readData, args = (r1JobID, shared.GetConn[r1JobID], shared.GetData[r1JobID], r1FetchSize, r1Query, outQueue, r1FinalDataReader))
                             shared.readP[r1JobID].start()
+                            iRunningReaders += 1
 
                             tParallelReadersNextCheck = timer() + shared.parallelReadersLaunchInterval
 
@@ -400,10 +400,10 @@ def jobManager():
                         case shared.E_READ_START:
 
                             iReadingReaders += 1
+                            logging.statsPrint('readDataStart', p_jobID=eJobID, p_recs=secs, p_secs=0, p_threads=iRunningReaders)
 
                             #don't start any new things if something happended meanwhile
                             if writersNotStartedYet and shared.Working.value:
-                                logging.statsPrint('readDataStart', p_jobID=eJobID, p_recs=secs, p_secs=0, p_threads=iRunningReaders)
                                 iRunningWriters = 0
                                 iTotalDataLinesWritten = 0
                                 fTotalWrittenSecs:float = .001
@@ -590,7 +590,7 @@ def jobManager():
                                     logging.logPrint(f'ignored error on forcing close on timeout, [{k}][{v[k]}]: [{e}]', logLevel.DEBUG)
                                     pass #do not remove as on production mode we comment the previous line
 
-                        if ( iIdleTimeout > 3 and iActiveJobsOnThisStream == 0 ):
+                        if ( iIdleTimeout > 3 and iActiveJobsOnThisStream == 0 and iRunningWriters == 0 ):
                             #exit inner loop
                             break
                     else:

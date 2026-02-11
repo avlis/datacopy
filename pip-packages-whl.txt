@@ -2,6 +2,7 @@ setproctitle
 psutil
 requests
 
+oracledb
 pyodbc
 mysql-connector-python
 databricks-sdk
