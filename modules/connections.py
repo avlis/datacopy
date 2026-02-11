@@ -20,7 +20,7 @@ check_bd_version_cmd:dict[str, str] = {
     'mysql':        'SELECT version()',
     'mariadb':      'SELECT version()',
     'csv':          '',
-    'cx_Oracle':    'SELECT * FROM V$VERSION',
+    'oracledb':    'SELECT * FROM V$VERSION',
     'pyodbc':       'SELECT @@version',
     'databricks':   'SELECT current_version()',
     '':             ''
@@ -32,7 +32,7 @@ change_schema_cmd:dict[str, str] = {
     'mysql':        'USE {0}',
     'mariadb':      'USE {0}',
     'csv':          '',
-    'cx_Oracle':    'ALTER SESSION SET CURRENT_SCHEMA = {0}}',
+    'oracledb':    'ALTER SESSION SET CURRENT_SCHEMA = {0}}',
     'pyodbc':       'USE {0}',
     'databricks':   '',
     '':             ''
@@ -44,7 +44,7 @@ change_timeout_cmd:dict[str, str] = {
     'mysql':        'SET SESSION wait_timeout = {0}',
     'mariadb':      'SET SESSION wait_timeout = {0}',
     'csv':          '',
-    'cx_Oracle':    '',
+    'oracledb':    '',
     'pyodbc':       '',
     'databricks':   '',
     '':             ''
@@ -55,7 +55,7 @@ insert_objects_delimiter = {
     'mysql':        '`',
     'mariadb':      '`',
     'csv':          '',
-    'cx_Oracle':    '"',
+    'oracledb':    '"',
     'pyodbc':       '"',
     'databricks':    '`',
     '':             ''
@@ -68,13 +68,15 @@ csv_quoting_decoder = {
     'NONNUMERIC':   csv.QUOTE_NONNUMERIC
 }
 
-def cx_Oracle_OutputTypeHandler(cursor, name, defaultType, size, precision, scale): # pylint: disable=unused-argument
-    '''oracle custom stuff'''
-    import cx_Oracle
-    if defaultType == cx_Oracle.DB_TYPE_CLOB:
-        return cursor.var(cx_Oracle.DB_TYPE_LONG, arraysize = cursor.arraysize)
-    if defaultType == cx_Oracle.DB_TYPE_BLOB:
-        return cursor.var(cx_Oracle.DB_TYPE_LONG_RAW, arraysize = cursor.arraysize)
+def oracledb_OutputTypeHandler(cursor, name, defaultType, size, precision, scale):
+    import oracledb
+    # Map Oracle LOB types to Python native types for eager loading
+    if defaultType == oracledb.DB_TYPE_CLOB:
+        # Pylance likes 'str' or oracledb.STRING
+        return cursor.var(str, arraysize=cursor.arraysize)
+    if defaultType == oracledb.DB_TYPE_BLOB:
+        # Pylance likes 'bytes' or oracledb.BINARY
+        return cursor.var(bytes, arraysize=cursor.arraysize)
 
 def load(p_filename:str) -> dict[int, dict[str, Any]]:
     '''
@@ -123,6 +125,9 @@ def preCheck(raw_connections:dict[int, dict[str, Any]]) -> dict[str, dict[str, A
                 if ecol not in aConn:
                     logging.processError(p_message=f'[{cName}]: Missing value on connections file: [{ecol}]', p_stop=True, p_exitCode=1)
                     return {}
+            if aConn['driver'] == 'cx_Oracle':
+                logging.logPrint('Warning: cx_Oracle driver was replaced by oracledb. Please update your connections file.')
+                aConn['driver'] = 'oracledb'
             if 'trustservercertificate' in aConn:
                 sTSC = aConn['trustservercertificate']
             else:
@@ -192,18 +197,36 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                 logging.processError(p_e=e, p_message=p_name, p_stop=True, p_exitCode=2)
                 return None
 
-        case 'cx_Oracle':
+        case 'oracledb':
             try:
-                import cx_Oracle
+                import oracledb
                 for x in range(p_qtd):
-                    nc[x]=cx_Oracle.connect(
-                        c['user'],
-                        c['password'],
-                        f"{c['server']}/{c['database']}",
-                        encoding = 'UTF-8',
-                        nencoding = 'UTF-8'
-                    )
-                    nc[x].outputtypehandler = cx_Oracle_OutputTypeHandler
+                    try:
+                        nc[x]=oracledb.connect(
+                            user=c['user'],
+                            password=c['password'],
+                            dsn=f"{c['server']}/{c['database']}"
+                        )
+                    except oracledb.Error as e:
+                        # Check if error is specifically "Unsupported version for Thin mode" (DPY-3010)
+                        if "DPY-3010" in str(e):
+                            logging.logPrint("Oracle driver: Falling back to Thick Mode for legacy database...")
+                            try:
+                                # Initialize once per application lifecycle
+                                oracledb.init_oracle_client(lib_dir="/opt/instantclient")
+                            except oracledb.ProgrammingError:
+                                pass # Already initialized
+
+                            # Retry connection in Thick mode
+                            nc[x]=oracledb.connect(
+                                user=c['user'],
+                                password=c['password'],
+                                dsn=f"{c['server']}/{c['database']}"
+                            )
+                        else:
+                            raise e
+                    nc[x].outputtypehandler = oracledb_OutputTypeHandler
+
                     try:
                         nc[x].client_identifier=shared.applicationName
                     except Exception as e:
