@@ -11,7 +11,7 @@ from multiprocessing.sharedctypes import Synchronized
 from datetime import datetime
 import zoneinfo
 
-from typing import Callable, Any
+from typing import Callable, Any, Optional
 
 
 #### Event fast "enum" ############################################################################
@@ -192,6 +192,13 @@ collectMemoryMainProcessID:psutil.Process = psutil.Process(os.getpid())
 
 defaultFetchSize:int = 1024
 
+#### AI stuff ######################################
+
+GENERATE_CREATE_TABLES = False
+
+ai_api_endpoint:str = os.getenv(key='AI_API_ENDPOINT', default='')
+ai_api_model:str = os.getenv(key='AI_API_MODEL', default='')
+ai_api_key:Optional[str] = os.getenv(key='AI_API_KEY', default=None)
 
 #### Shared Variables, but changed in single thread contexts ######################################
 

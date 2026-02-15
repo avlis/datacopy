@@ -410,73 +410,86 @@ def jobManager():
                                 logging.logPrint(f'writersNotStartedYet, processing cols to prepare insert statement: [{recs}]', logLevel.DEBUG, p_jobID=eJobID)
                                 sColNames = ''
                                 sColsPlaceholders = ''
+                                insertQuery = ''
 
-                                workingCols = None
+                                if not shared.GENERATE_CREATE_TABLES:
+                                    workingCols = None
 
-                                match thisJob.overrideCols:
-                                    case '' | '@' | '@l' | '@u':
-                                        workingCols = recs
-                                    case '@d':
-                                        # from destination:
-                                        newConns = connections.initConnections(thisJob.dest, False, 1, thisJob.table, 'r')
-                                        if newConns is not None:
-                                            cConn = newConns[0]
+                                    match thisJob.overrideCols:
+                                        case '' | '@' | '@l' | '@u':
+                                            workingCols = recs
+                                        case '@d':
+                                            # from destination:
+                                            newConns = connections.initConnections(thisJob.dest, False, 1, thisJob.table, 'r')
+                                            if newConns is not None:
+                                                cConn = newConns[0]
+                                            else:
+                                                break
+                                            tdCursor = cConn.cursor()
+                                            siObjSep = connections.getConnectionParameter(thisJob.dest, 'insert_object_delimiter')
+                                            fetchColsFromDestSql=f'SELECT * FROM {siObjSep}{thisJob.table}{siObjSep}  WHERE 1=0'
+                                            logging.logPrint(f'retrieving cols for @d, executing [{fetchColsFromDestSql}]', logLevel.DEBUG, p_jobID=eJobID)
+                                            tdCursor.execute(fetchColsFromDestSql)
+                                            workingCols = tdCursor.description
+                                            cConn.rollback() #somehow, this select blocks truncates on postgres, if not rolled back?...
+                                            tdCursor.close()
+                                        case _:
+                                            workingCols = []
+                                            for col in thisJob.overrideCols.split(','):
+                                                workingCols.append( (col,'dummy') )
+
+                                    sIP = connections.getConnectionParameter(thisJob.dest, 'insert_placeholder')
+                                    siObjSep = connections.getConnectionParameter(thisJob.dest, 'insert_object_delimiter')
+
+                                    for col in workingCols:
+                                        if col[0] not in thisJob.ignoreCols:
+                                            sColNames = f'{sColNames}{siObjSep}{col[0]}{siObjSep},'
+                                            sColsPlaceholders = f'{sColsPlaceholders}{sIP},'
+                                    sColNames = sColNames[:-1]
+                                    sColsPlaceholders = sColsPlaceholders[:-1]
+
+                                    insertQuery = ''
+                                    match thisJob.overrideCols:
+                                        case '@d':
+                                            insertQuery = f'INSERT INTO {siObjSep}{thisJob.table}{siObjSep}({sColNames}) VALUES ({sColsPlaceholders})'
+                                            sIcolType = 'from destination'
+                                        case '@l':
+                                            insertQuery = f'INSERT INTO {siObjSep}{thisJob.table}{siObjSep}({sColNames.lower()}) VALUES ({sColsPlaceholders})'
+                                            sIcolType = 'from source, lowercase'
+                                        case '@u':
+                                            insertQuery = f'INSERT INTO {siObjSep}{thisJob.table}{siObjSep}({sColNames.upper()}) VALUES ({sColsPlaceholders})'
+                                            sIcolType = 'from source, upercase'
+                                        case _:
+                                            if len(thisJob.overrideCols)>0 and thisJob.overrideCols[0] != '@':
+                                                insertQuery = f'INSERT INTO {siObjSep}{thisJob.table}{siObjSep}({thisJob.overrideCols}) VALUES ({sColsPlaceholders})'
+                                                sIcolType = 'overridden'
+                                            else:
+                                                insertQuery = f'INSERT INTO {siObjSep}{thisJob.table}{siObjSep}({sColNames}) VALUES ({sColsPlaceholders})'
+                                                sIcolType = 'from source'
+
+                                    sColNamesNoQuotes:str = sColNames.replace(f'{siObjSep}','')
+
+                                    logging.logPrint(sColNamesNoQuotes.split(','), logLevel.DUMP_COLS)
+                                    if connections.getConnectionParameter(thisJob.dest, 'driver') == 'csv':
+                                        logging.logPrint(f'cols for CSV file(s): [{sColNamesNoQuotes}]', p_jobID=eJobID)
+                                        if  thisJob.mode.upper() in ('T','D'):
+                                            sCSVHeader:str = sColNamesNoQuotes
                                         else:
-                                            break
-                                        tdCursor = cConn.cursor()
-                                        siObjSep = connections.getConnectionParameter(thisJob.dest, 'insert_object_delimiter')
-                                        fetchColsFromDestSql=f'SELECT * FROM {siObjSep}{thisJob.table}{siObjSep}  WHERE 1=0'
-                                        logging.logPrint(f'retrieving cols for @d, executing [{fetchColsFromDestSql}]', logLevel.DEBUG, p_jobID=eJobID)
-                                        tdCursor.execute(fetchColsFromDestSql)
-                                        workingCols = tdCursor.description
-                                        cConn.rollback() #somehow, this select blocks truncates on postgres, if not rolled back?...
-                                        tdCursor.close()
-                                    case _:
-                                        workingCols = []
-                                        for col in thisJob.overrideCols.split(','):
-                                            workingCols.append( (col,'dummy') )
+                                            sCSVHeader:str = ''
 
-                                sIP = connections.getConnectionParameter(thisJob.dest, 'insert_placeholder')
-                                siObjSep = connections.getConnectionParameter(thisJob.dest, 'insert_object_delimiter')
-
-                                for col in workingCols:
-                                    if col[0] not in thisJob.ignoreCols:
-                                        sColNames = f'{sColNames}{siObjSep}{col[0]}{siObjSep},'
-                                        sColsPlaceholders = f'{sColsPlaceholders}{sIP},'
-                                sColNames = sColNames[:-1]
-                                sColsPlaceholders = sColsPlaceholders[:-1]
-
-                                iQuery = ''
-                                match thisJob.overrideCols:
-                                    case '@d':
-                                        iQuery = f'INSERT INTO {siObjSep}{thisJob.table}{siObjSep}({sColNames}) VALUES ({sColsPlaceholders})'
-                                        sIcolType = 'from destination'
-                                    case '@l':
-                                        iQuery = f'INSERT INTO {siObjSep}{thisJob.table}{siObjSep}({sColNames.lower()}) VALUES ({sColsPlaceholders})'
-                                        sIcolType = 'from source, lowercase'
-                                    case '@u':
-                                        iQuery = f'INSERT INTO {siObjSep}{thisJob.table}{siObjSep}({sColNames.upper()}) VALUES ({sColsPlaceholders})'
-                                        sIcolType = 'from source, upercase'
-                                    case _:
-                                        if len(thisJob.overrideCols)>0 and thisJob.overrideCols[0] != '@':
-                                            iQuery = f'INSERT INTO {siObjSep}{thisJob.table}{siObjSep}({thisJob.overrideCols}) VALUES ({sColsPlaceholders})'
-                                            sIcolType = 'overridden'
-                                        else:
-                                            iQuery = f'INSERT INTO {siObjSep}{thisJob.table}{siObjSep}({sColNames}) VALUES ({sColsPlaceholders})'
-                                            sIcolType = 'from source'
-
-                                sColNamesNoQuotes:str = sColNames.replace(f'{siObjSep}','')
-
-                                logging.logPrint(sColNamesNoQuotes.split(','), logLevel.DUMP_COLS)
-                                if connections.getConnectionParameter(thisJob.dest, 'driver') == 'csv':
-                                    logging.logPrint(f'cols for CSV file(s): [{sColNamesNoQuotes}]', p_jobID=eJobID)
-                                    if  thisJob.mode.upper() in ('T','D'):
-                                        sCSVHeader:str = sColNamesNoQuotes
                                     else:
-                                        sCSVHeader:str = ''
-
+                                        logging.logPrint(f'insert query (cols {sIcolType}): [{insertQuery}]', p_jobID=eJobID)
                                 else:
-                                    logging.logPrint(f'insert query (cols {sIcolType}): [{iQuery}]', p_jobID=eJobID)
+                                    #just generate create statements with an LLM
+                                    import modules.ai as ai
+                                    create_statement:str = ai.generate_create_table(
+                                        p_jobID=eJobID,
+                                        p_description=recs,
+                                        p_tablename=thisJob.table,
+                                        p_source_db_name = connections.database_name_for_llm[ thisJob.sourceDriver ],
+                                        p_target_db_name = connections.database_name_for_llm[ thisJob.destDriver ]
+                                    )
+                                    logging.logPrint(f'create statement generated by LLM:[\n{create_statement}\n]', p_jobID=eJobID)
 
                                 if not shared.TEST_QUERIES:
                                     logging.logPrint(f'number of writers for this job: [{thisJob.nbrParallelWriters}]', p_jobID=eJobID)
@@ -501,7 +514,7 @@ def jobManager():
                                                         shared.PutData[iWriters].execute(thisJob.preCmdDst)
                                                     except Exception as e:
                                                         logging.processError(p_e=e, p_message=f'preparing cursor #{iWriters} for inserts, preCmdDst=[{thisJob.preCmdDst}]', p_jobID=eJobID,p_dontSendToStats=True)
-                                                shared.writeP[iWriters] = (mp.Process(target=datahandlers.writeData, args = (eJobID, iWriters, shared.PutConn[iWriters], shared.PutData[iWriters], iQuery) ))
+                                                shared.writeP[iWriters] = (mp.Process(target=datahandlers.writeData, args = (eJobID, iWriters, shared.PutConn[iWriters], shared.PutData[iWriters], insertQuery) ))
                                                 shared.writeP[iWriters].start()
                                             iWriters += 1
                                             iRunningWriters += 1

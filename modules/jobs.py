@@ -264,14 +264,26 @@ def preCheck(raw_jobs:dict[int, dict[str, Any]]) -> dict[int, dict[str, Any]]:
             logging.processError(p_message=f'keys source [{key_source}] not declared on connections. giving up.', p_stop=True, p_exitCode=4)
             return {}
 
+        if sourceDriver == 'csv':
+            if shared.GENERATE_CREATE_TABLES:
+                logging.processError(p_message=f'cannot generate create table statements from CSV sources (jobs line {key+1}), giving up.', p_stop=True, p_exitCode=4)
+                return {}
+            if 'insert_cols' in aJob:
+                if aJob['insert_cols'] in ('' , '@' , '@l' , '@u'):
+                    logging.processError(p_message=f'cannot infer (yet) insert cols from a csv source (jobs line {key+1}). giving up.', p_stop=True, p_exitCode=4)
+                    return {}
+
         if dest not in shared.connections and mode.upper() != 'E':
             logging.processError(p_message=f'data destination [{dest}] not declared on connections. giving up.', p_stop=True, p_exitCode=4)
             return {}
 
         if destDriver == 'csv':
+            if shared.GENERATE_CREATE_TABLES:
+                logging.processError(p_message=f'cannot generate create table statements for CSV destination (jobs line {key+1}), giving up.', p_stop=True, p_exitCode=4)
+                return {}
             if 'insert_cols' in aJob:
                 if aJob['insert_cols'] == '@d':
-                    logging.processError(p_message=f'cannot infer (yet) insert cols from a csv destination (jobs line{key+1}). giving up.', p_stop=True, p_exitCode=4)
+                    logging.processError(p_message=f'cannot infer (yet) insert cols from a csv destination (jobs line {key+1}). giving up.', p_stop=True, p_exitCode=4)
                     return {}
 
         if key_source != '' and sourceDriver == 'csv':

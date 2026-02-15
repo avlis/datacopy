@@ -2,7 +2,7 @@
 # --- Global Scope ---
 ARG PYTHON_VER=3.14
 ARG BASEIMAGE=python:${PYTHON_VER}-slim
-ARG base_version="base-20260210-002"
+ARG base_version="base-20260215-001"
 
 
 ################ STAGE 1 (builder) ################

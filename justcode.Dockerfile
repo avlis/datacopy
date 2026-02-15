@@ -1,5 +1,5 @@
 ARG BASENAME=datacopy
-ARG version="20260211-001"
+ARG version="20260215-001"
 
 FROM ${BASENAME}:flat
 ARG version

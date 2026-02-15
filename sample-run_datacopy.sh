@@ -1,5 +1,6 @@
 #!/bin/bash
 jobname=$(basename $1 .csv)
+shift 1
 echo "[${jobname}]"
 
 RUNAS_UID=$(id -u)
@@ -18,6 +19,7 @@ fi
 #example of a call with direct access to the host postgres socket, for higher performance 
 # http proxy settings are only used for databricks stuff.
 
+
 [ -z "${DEBUG}" ] && _STDERR=2\>/dev/null
 eval docker run ${RMOPT} --name ${jobname} --log-driver=none -a stdin -a stdout -a stderr --network=host \
 --mount type=bind,source="$(pwd)",target=/app \
@@ -34,4 +36,5 @@ eval docker run ${RMOPT} --name ${jobname} --log-driver=none -a stdin -a stdout 
 -e COLLECT_MEMORY_STATS=${COLLECT_MEMORY_STATS:-no} -e MEMORY_STATS_IN_JSON=${MEMORY_STATS_IN_JSON:-no} -e COLLECT_MEMORY_STATS_INTERVAL_SECS=${COLLECT_MEMORY_STATS_INTERVAL_SECS:-1} \
 -e LOG_TIMESTAMP_FORMAT=${LOG_TIMESTAMP_FORMAT:-date} -e STATS_TIMESTAMP_FORMAT=${STATS_TIMESTAMP_FORMAT:-compact} -e MEMORY_STATS_TIMESTAMP_FORMAT=${MEMORY_STATS_TIMESTAMP_FORMAT:-linux} \
 -e -e BUILD_DEBUG=${BUILD_DEBUG:-no} DEBUG=${DEBUG:-no} -e DEBUG_TO_LOG=${DEBUG_TO_LOG:-no} -e DEBUG_TO_STDERR=${DEBUG_TO_STDERR:-no} \
-datacopy:${IMAGETAG:-latest} ${_STDERR}
+-e AI_API_ENDPOINT=${AI_API_ENDPOINT:-http://my-lmstudio-server:1234/v1/chat/completions} -e AI_API_MODEL=${AI_API_MODEL:-mlx-community/Qwen3-Coder-30B-A3B-Instruct-8bit} \
+datacopy:${IMAGETAG:-latest} $* ${_STDERR}

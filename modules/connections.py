@@ -50,7 +50,7 @@ change_timeout_cmd:dict[str, str] = {
     '':             ''
 }
 
-insert_objects_delimiter = {
+insert_objects_delimiter:dict[str, str] = {
     'psycopg2':     '"',
     'mysql':        '`',
     'mariadb':      '`',
@@ -61,7 +61,18 @@ insert_objects_delimiter = {
     '':             ''
 }
 
-csv_quoting_decoder = {
+database_name_for_llm:dict[str, str] = {
+    'psycopg2':     'postgres',
+    'mysql':        'mysql',
+    'mariadb':      'mariadb',
+    'csv':          '',
+    'oracledb':    'oracle',
+    'pyodbc':       'microsoft sql server',
+    'databricks':    'databricks',
+    '':             ''
+}
+
+csv_quoting_decoder:dict[str, int] = {
     'ALL':          csv.QUOTE_ALL,
     'MINIMAL':      csv.QUOTE_MINIMAL,
     'NONE':         csv.QUOTE_NONE,
