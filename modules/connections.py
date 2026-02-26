@@ -23,6 +23,7 @@ check_bd_version_cmd:dict[str, str] = {
     'oracledb':    'SELECT * FROM V$VERSION',
     'pyodbc':       'SELECT @@version',
     'databricks':   'SELECT current_version()',
+    'bigquery':     'SELECT 1',
     '':             ''
 }
 
@@ -35,6 +36,7 @@ change_schema_cmd:dict[str, str] = {
     'oracledb':    'ALTER SESSION SET CURRENT_SCHEMA = {0}}',
     'pyodbc':       'USE {0}',
     'databricks':   '',
+    'bigquery':     '',
     '':             ''
 }
 
@@ -47,6 +49,7 @@ change_timeout_cmd:dict[str, str] = {
     'oracledb':    '',
     'pyodbc':       '',
     'databricks':   '',
+    'bigquery':     '',
     '':             ''
 }
 
@@ -58,6 +61,7 @@ insert_objects_delimiter:dict[str, str] = {
     'oracledb':    '"',
     'pyodbc':       '"',
     'databricks':    '`',
+    'bigquery':      '`',
     '':             ''
 }
 
@@ -69,6 +73,7 @@ database_name_for_llm:dict[str, str] = {
     'oracledb':    'oracle',
     'pyodbc':       'microsoft sql server',
     'databricks':    'databricks',
+    'bigquery':      'bigquery',
     '':             ''
 }
 
@@ -366,6 +371,46 @@ def initConnections(p_name:str, p_readOnly:bool, p_qtd:int, p_tableName = '', p_
                 logging.processError(p_e=e, p_message=p_name, p_stop=True, p_exitCode=2)
                 return None
 
+        case 'bigquery':
+            try:
+                from google.cloud import bigquery
+                from google.cloud import bigquery_dbapi
+                from google.oauth2 import service_account
+
+                # user column contains the path to the credentials file if it starts with @
+                credentials = None
+                if c['user'].startswith('@'):
+                    key_path = c['user'][1:]
+                    credentials = service_account.Credentials.from_service_account_file(key_path)
+                    logging.logPrint(f'({p_name}): using credentials from [{key_path}]', logLevel.DEBUG, reportFrom=True)
+
+                for x in range(p_qtd):
+                    # server=project, database=dataset
+                    # timeout is used for API requests; user_agent for application identification
+                    client = bigquery.Client(
+                        project=c['server'], 
+                        credentials=credentials, 
+                        user_agent=shared.applicationName,
+                        # Pass connection timeout to the underlying transport
+                        # (Note: client doesn't have a direct connection_timeout param, but we can use it in queries later)
+                    )
+                    
+                    # We store both the client (for high perf inserts) and a DB-API connection (for reads/generic commands)
+                    # datacopy expects a connection object that has a .cursor() method.
+                    # bigquery_dbapi.Connection does exactly that.
+                    nc[x] = bigquery_dbapi.connect(client=client)
+                    
+                    # Store the client on the connection object so we can access it in the datahandlers modules.
+                    nc[x]._bq_client = client
+                    nc[x]._bq_dataset = c['database']
+                    nc[x]._bq_table = p_tableName
+                    
+                    logging.logPrint(f'({p_name}): bigquery[{x}]: client initialized for project [{c["server"]}] and dataset [{c["database"]}] for table [{p_tableName}]', logLevel.DEBUG, reportFrom=True)
+
+            except Exception as e:
+                logging.processError(p_e=e, p_message=p_name, p_stop=True, p_exitCode=2)
+                return None
+
         case 'csv':
             try:
                 _delim = utils.delimiter_decoder(c['delimiter'])
@@ -495,6 +540,16 @@ def initCursor(p_conn, p_jobID:int, p_source:str, p_fetchSize:int):
     '''prepares the object that will send commands to databases'''
     # postgres: try not to fetch all rows to memory, using server side cursors
     # mysql, mariaDB: use unbuffered cursors
+
+    if hasattr(p_conn, '_bq_client'):
+        logging.logPrint(f'({p_source}): returning BigQuery client as cursor', logLevel.DEBUG, p_jobID=p_jobID, reportFrom=True)
+        client = p_conn._bq_client
+        # Add a convenience execute method for initialization commands if it doesn't exist
+        if not hasattr(client, 'execute'):
+            def bq_execute(sql, params=None):
+                return client.query(sql).result()
+            client.execute = bq_execute
+        return client
 
     try:
         logging.logPrint(f'({p_source}): trying to get server side cursor...', logLevel.DEBUG, p_jobID=p_jobID, reportFrom=True)

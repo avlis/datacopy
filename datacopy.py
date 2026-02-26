@@ -112,7 +112,7 @@ def Main():
         c_filename = args.connections_file
 
     setproctitle(f'datacopy: main thread [{q_filename}]')
-    shared.applicationName = 'datacopy[{q_filename}]'
+    shared.applicationName = f'datacopy[{q_filename}]'
 
     logging.logThread = mp.Process(target=logging.writeToLog_files)
     logging.logThread.start()

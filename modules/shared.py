@@ -113,6 +113,15 @@ def getJobName(p_jobID:int) -> str:
 
 applicationName = 'datacopy'
 
+# --- Configuration from Environment Variables ---
+LOG_FILE_PREFIX = os.getenv('LOG_NAME', '') 
+JOB_FILE = os.getenv('JOB_FILE', 'job.csv')
+CONNECTIONS_FILE = os.getenv('CONNECTIONS_FILE', 'connections.csv')
+BASE_VERSION = os.getenv('BASE_VERSION', '<unknown>')
+VERSION = os.getenv('VERSION', '<unknown>')
+ADD_NAMES_DELIMITERS = os.getenv('ADD_NAMES_DELIMITERS', 'no')
+# -----------------------------------------------
+
 queueSize:int = int(os.getenv('QUEUE_SIZE','256'))
 usedQueueBeforeNew:int = int(queueSize/int(os.getenv('QUEUE_FB4NEWR','3')))
 
@@ -212,8 +221,9 @@ GetConn2:dict[int, Any] = {}
 GetData:dict[int, Any] = {}
 GetData2:dict[int, Any] = {}
 
-readP:dict[int, Any] = {}
-writeP:dict[int, Any] = {}
+_manager = mp.Manager()
+readP = _manager.dict()
+writeP = _manager.dict()
 
 logName:str = ''
 

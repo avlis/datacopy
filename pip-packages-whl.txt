@@ -6,3 +6,7 @@ oracledb
 pyodbc
 mysql-connector-python
 databricks-sdk
+google-cloud-bigquery
+google-cloud-bigquery-storage
+pyarrow
+db-dtypes
